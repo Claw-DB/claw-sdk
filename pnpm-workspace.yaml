@@ -1,0 +1,10 @@
+packages:
+  - "sdks/typescript"
+  - "sdks/cli-wrapper"
+  - "sdks/mcp-adapter"
+  - "adapters/langchain"
+  - "adapters/openai"
+  - "adapters/vercel-ai"
+  - "packages/proto"
+  - "packages/types"
+  - "packages/errors"

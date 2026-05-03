@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "clawdb"
+version = "0.1.0"
+description = "Python SDK for ClawDB — the cognitive database for AI agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+keywords = ["clawdb", "ai", "database", "agents", "memory", "vector"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Topic :: Database",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "grpcio>=1.64",
+  "grpcio-tools>=1.64",
+  "protobuf>=5.27",
+  "pydantic>=2.7",
+  "tenacity>=8.3",
+  "structlog>=24.2",
+]
+
+[project.optional-dependencies]
+async = ["grpcio>=1.64"]
+langchain = ["langchain-core>=0.2"]
+openai = ["openai>=1.30"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["clawdb"]
+
+[tool.hatch.envs.default]
+dependencies = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "mypy>=1.10",
+  "ruff>=0.4",
+  "grpc-stubs>=1.53",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest tests/ -v"
+type-check = "mypy clawdb/"
+format = "ruff format clawdb/ tests/"
+lint = "ruff check clawdb/ tests/"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+

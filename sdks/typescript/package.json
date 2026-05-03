@@ -1,0 +1,42 @@
+{
+  "name": "@clawdb/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@clawdb/errors": "workspace:*",
+    "@clawdb/proto": "workspace:*",
+    "@clawdb/types": "workspace:*",
+    "nice-grpc": "^2.1.0",
+    "nice-grpc-web": "^3.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.1",
+    "tsup": "^8.2.4",
+    "vitest": "^1.6.1"
+  }
+}

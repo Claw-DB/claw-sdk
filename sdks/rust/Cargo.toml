@@ -1,0 +1,36 @@
+[package]
+name = "clawdb-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["ClawDB Contributors"]
+description = "Official Rust SDK for ClawDB — the cognitive database for AI agents"
+license = "Apache-2.0"
+repository = "https://github.com/clawdb/claw-sdk"
+keywords = ["clawdb", "memory", "ai", "agent", "grpc"]
+categories = ["api-bindings", "database"]
+
+[lib]
+name = "clawdb_sdk"
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+url = "2.5"
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+async-trait = "0.1"
+futures = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = ["http"]
+http = ["reqwest"]

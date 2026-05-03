@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "paths": {
+      "@clawdb/proto": ["packages/proto/src/index.ts"],
+      "@clawdb/types": ["packages/types/src/index.ts"],
+      "@clawdb/errors": ["packages/errors/src/index.ts"],
+      "@clawdb/sdk": ["sdks/typescript/src/index.ts"]
+    },
+    "types": ["vitest/globals", "node"]
+  }
+}

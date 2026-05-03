@@ -1,0 +1,31 @@
+{
+  "name": "@clawdb/proto",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "proto"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "generate": "./generate.sh"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.0",
+    "nice-grpc": "^2.1.0"
+  },
+  "devDependencies": {
+    "ts-proto": "^1.176.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
