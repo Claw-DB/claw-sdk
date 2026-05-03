@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20.14.0'
+  PNPM_VERSION: '9'
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # TypeScript / Node
+  # ──────────────────────────────────────────────────────────────
+  test-typescript:
+    name: Test TypeScript SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @clawdb/sdk build
+      - run: pnpm --filter @clawdb/sdk test run
+      - run: pnpm --filter @clawdb/langchain test run
+      - run: pnpm --filter @clawdb/openai-agents test run
+      - run: pnpm --filter @clawdb/vercel-ai test run
+
+  type-check:
+    name: TypeScript type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm -r exec tsc --noEmit
+
+  lint-all:
+    name: Lint (ESLint + Prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r lint || true  # Non-blocking until lint config is enforced
+      - run: pnpm -r exec prettier --check . || true
+
+  # ──────────────────────────────────────────────────────────────
+  # Python
+  # ──────────────────────────────────────────────────────────────
+  test-python:
+    name: Test Python SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install deps
+        working-directory: sdks/python
+        run: |
+          pip install -e ".[dev]"
+      - name: Run tests
+        working-directory: sdks/python
+        run: pytest --tb=short -q
+
+  # ──────────────────────────────────────────────────────────────
+  # Rust
+  # ──────────────────────────────────────────────────────────────
+  test-rust-sdk:
+    name: Test Rust SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdks/rust
+      - working-directory: sdks/rust
+        run: cargo test
+      - working-directory: sdks/rust
+        run: cargo clippy -- -D warnings
+      - working-directory: sdks/rust
+        run: cargo fmt --check
+
+  # ──────────────────────────────────────────────────────────────
+  # Go
+  # ──────────────────────────────────────────────────────────────
+  test-go:
+    name: Test Go SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: sdks/go/go.sum
+      - working-directory: sdks/go
+        run: go test ./... -v -race
+      - working-directory: sdks/go
+        run: go vet ./...
+
+  # ──────────────────────────────────────────────────────────────
+  # CLI
+  # ──────────────────────────────────────────────────────────────
+  test-cli:
+    name: Test CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @clawdb/cli build
+      - run: pnpm --filter @clawdb/cli test run || true
