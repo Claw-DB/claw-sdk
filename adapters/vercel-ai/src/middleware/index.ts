@@ -1,10 +1,7 @@
 import type { ClawDB } from '@clawdb/sdk';
 
-/**
- * Vercel AI SDK LanguageModelMiddleware duck-typed interface.
- * The real interface is provided by the `ai` package at runtime.
- */
 export interface LanguageModelMiddleware {
+  transformParams?: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
   wrapGenerate?: (options: {
     doGenerate: () => Promise<unknown>;
     params: Record<string, unknown>;
@@ -15,50 +12,68 @@ export interface LanguageModelMiddleware {
   }) => Promise<unknown>;
 }
 
-/**
- * Middleware that automatically stores AI responses as memories in ClawDB.
- *
- * Wrap your `generateText` / `streamText` model with this middleware to
- * persist every AI response for long-term recall.
- *
- * @example
- * ```ts
- * import { clawdbMiddleware } from '@clawdb/vercel-ai';
- * const model = wrapLanguageModel({
- *   model: openai('gpt-4o'),
- *   middleware: clawdbMiddleware(db),
- * });
- * ```
- */
+function extractLastUserMessage(params: Record<string, unknown>): string {
+  const messages = params['messages'];
+  if (!Array.isArray(messages)) return '';
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i] as Record<string, unknown>;
+    if (item?.['role'] === 'user') {
+      const content = item['content'];
+      if (typeof content === 'string') return content;
+    }
+  }
+  return '';
+}
+
 export function clawdbMiddleware(client: ClawDB): LanguageModelMiddleware {
   return {
+    async transformParams(params) {
+      const userMessage = extractLastUserMessage(params);
+      if (!userMessage) {
+        return params;
+      }
+
+      const hits = await client.memory.search(userMessage, { topK: 5, semantic: true });
+      if (hits.length === 0) {
+        return params;
+      }
+
+      const memoryBlock = {
+        role: 'system',
+        content: `Relevant memory:\n${hits.map((hit, i) => `${i + 1}. ${hit.content}`).join('\n')}`
+      };
+
+      const messages = Array.isArray(params['messages']) ? (params['messages'] as unknown[]) : [];
+      return {
+        ...params,
+        messages: [memoryBlock, ...messages]
+      };
+    },
+
     async wrapGenerate({ doGenerate, params }) {
       const result = await doGenerate();
+      const userMessage = extractLastUserMessage(params);
+      const assistantMessage = typeof (result as { text?: unknown })?.text === 'string'
+        ? String((result as { text: string }).text)
+        : '';
 
-      try {
-        const output = result as { text?: string };
-        const userPrompt = (params['prompt'] as Array<{ content?: Array<{ text?: string }> }>)?.[0]?.content?.[0]?.text;
-        if (output?.text) {
-          await client.memory.remember(output.text, {
-            memoryType: 'tool_output' as Parameters<typeof client.memory.remember>[1] extends { memoryType?: infer T } ? T : never,
-            metadata: {
-              prompt: userPrompt,
-              source: 'vercel-ai-middleware',
-            },
-          });
-        }
-      } catch {
-        // Memory persistence is best-effort — never fail the main flow.
+      if (userMessage) {
+        await client.memory.remember(userMessage, { memoryType: 'message', tags: ['role:user'] });
+      }
+      if (assistantMessage) {
+        await client.memory.remember(assistantMessage, { memoryType: 'message', tags: ['role:assistant'] });
       }
 
       return result;
     },
 
     async wrapStream({ doStream, params }) {
-      // Stream wrapping is best-effort; we pass through without interception
-      // since consuming the stream would break backpressure.
-      void params;
-      return doStream();
-    },
+      const streamResult = await doStream();
+      const userMessage = extractLastUserMessage(params);
+      if (userMessage) {
+        await client.memory.remember(userMessage, { memoryType: 'message', tags: ['role:user'] });
+      }
+      return streamResult;
+    }
   };
 }

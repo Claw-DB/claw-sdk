@@ -1,255 +1,276 @@
-#!/usr/bin/env node
-/**
- * @clawdb/mcp-adapter — MCP server that exposes ClawDB as Model Context Protocol tools.
- *
- * Run standalone:
- *   npx @clawdb/mcp-adapter
- *
- * Claude Desktop config:
- * {
- *   "mcpServers": {
- *     "clawdb": {
- *       "command": "npx",
- *       "args": ["-y", "@clawdb/mcp-adapter"],
- *       "env": { "CLAWDB_ENDPOINT": "http://localhost:50050", "CLAWDB_AGENT_ID": "my-agent" }
- *     }
- *   }
- * }
- */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { ClawDB } from '@clawdb/sdk';
+import { ClawDB, type SearchHit } from '@clawdb/sdk';
 
-const server = new McpServer({ name: 'clawdb', version: '0.1.0' });
-const db = ClawDB.fromEnv();
+const PACKAGE_VERSION = '0.1.3';
+const CLOUD_ENDPOINT = 'https://cloud.clawdb.dev';
 
-// ──────────────────────────────────────────────────────────────
-// Tools
-// ──────────────────────────────────────────────────────────────
+function resolveClientConfig(): { endpoint?: string; apiKey?: string; agentId?: string } {
+  const explicitEndpoint = process.env.CLAWDB_URL?.trim();
+  const apiKey = process.env.CLAWDB_API_KEY?.trim();
+  const agentId = process.env.CLAWDB_AGENT_ID?.trim();
 
-server.tool(
-  'clawdb_remember',
-  'Store information in ClawDB persistent agent memory.',
-  {
-    content: z.string().describe('The information to store'),
-    memory_type: z
-      .enum(['context', 'task', 'tool_output', 'session', 'reasoning_trace', 'message', 'summary'])
-      .optional()
-      .describe('Memory type'),
-    tags: z.array(z.string()).optional().describe('Tags'),
-    metadata: z.record(z.unknown()).optional().describe('Structured metadata'),
-  },
-  async ({ content, memory_type, tags, metadata }) => {
-    const id = await db.memory.remember(content, {
-      memoryType: memory_type as Parameters<typeof db.memory.remember>[1] extends { memoryType?: infer T } ? T : never,
-      tags,
-      metadata,
-    });
-    return { content: [{ type: 'text', text: JSON.stringify({ memory_id: id, status: 'stored' }) }] };
+  if (explicitEndpoint) {
+    return { endpoint: explicitEndpoint, apiKey: apiKey || undefined, agentId: agentId || undefined };
   }
-);
-
-server.tool(
-  'clawdb_search',
-  'Semantically search ClawDB agent memory.',
-  {
-    query: z.string().describe('Search query'),
-    top_k: z.number().min(1).max(50).optional().describe('Number of results (default 5)'),
-    semantic: z.boolean().optional().describe('Use semantic search (default true)'),
-  },
-  async ({ query, top_k, semantic }) => {
-    const results = await db.memory.search(query, { topK: top_k ?? 5, semantic: semantic ?? true });
-    const formatted = results
-      .map(r => `[${r.score.toFixed(3)}] ${r.memory.content} (id: ${r.memory.id})`)
-      .join('\n');
-    return {
-      content: [
-        { type: 'text', text: formatted || 'No results found.' },
-      ],
-    };
+  if (apiKey) {
+    return { endpoint: CLOUD_ENDPOINT, apiKey, agentId: agentId || undefined };
   }
-);
+  return { agentId: agentId || undefined };
+}
 
-server.tool(
-  'clawdb_recall',
-  'Retrieve specific memory records by their IDs.',
-  { memory_ids: z.array(z.string()).describe('Memory IDs to retrieve') },
-  async ({ memory_ids }) => {
-    const memories = await db.memory.recall(memory_ids);
-    return {
-      content: [{ type: 'text', text: JSON.stringify(memories, null, 2) }],
-    };
+function getClaudeConfigPath(): string {
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
   }
-);
-
-server.tool(
-  'clawdb_forget',
-  'Soft-delete a memory record.',
-  { memory_id: z.string().describe('ID of the memory to delete') },
-  async ({ memory_id }) => {
-    await db.memory.forget(memory_id);
-    return { content: [{ type: 'text', text: `Memory ${memory_id} deleted.` }] };
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming');
+    return join(appData, 'Claude', 'claude_desktop_config.json');
   }
-);
+  return join(homedir(), '.config', 'Claude', 'claude_desktop_config.json');
+}
 
-server.tool(
-  'clawdb_branch_fork',
-  'Fork a new isolated memory branch.',
-  {
-    name: z.string().describe('Branch name'),
-    parent: z.string().optional().describe('Parent branch (default: trunk)'),
-  },
-  async ({ name, parent }) => {
-    const branch = await db.branches.fork(name, { parent });
-    return { content: [{ type: 'text', text: JSON.stringify({ branch_id: branch.id, name: branch.name }) }] };
-  }
-);
-
-server.tool(
-  'clawdb_branch_list',
-  'List all memory branches.',
-  {},
-  async () => {
-    const branches = await db.branches.list();
-    return {
-      content: [
-        {
-          type: 'text',
-          text: branches.map(b => `${b.name} (${b.status})`).join('\n') || 'No branches.',
-        },
-      ],
-    };
-  }
-);
-
-server.tool(
-  'clawdb_branch_diff',
-  'Diff two memory branches.',
-  {
-    branch_a: z.string().describe('First branch'),
-    branch_b: z.string().describe('Second branch'),
-  },
-  async ({ branch_a, branch_b }) => {
-    const diff = await db.branches.diff(branch_a, branch_b);
-    return { content: [{ type: 'text', text: JSON.stringify(diff, null, 2) }] };
-  }
-);
-
-server.tool(
-  'clawdb_branch_merge',
-  'Merge a branch into a target branch.',
-  {
-    source: z.string().describe('Source branch to merge'),
-    target: z.string().optional().describe('Target branch (default: trunk)'),
-    strategy: z.enum(['ours', 'theirs', 'union']).optional().describe('Merge strategy'),
-  },
-  async ({ source, target, strategy }) => {
-    const result = await db.branches.merge(source, {
-      into: target ?? 'trunk',
-      strategy,
-    });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Merged ${result.applied} records. Conflicts: ${result.conflicts.length}`,
-        },
-      ],
-    };
-  }
-);
-
-server.tool(
-  'clawdb_sync',
-  'Push and pull memory with ClawDB Cloud.',
-  {
-    push_only: z.boolean().optional().describe('Only push'),
-    pull_only: z.boolean().optional().describe('Only pull'),
-  },
-  async ({ push_only, pull_only }) => {
-    let result: unknown;
-    if (push_only) result = await db.sync.push();
-    else if (pull_only) result = await db.sync.pull();
-    else result = await db.sync.sync();
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-  }
-);
-
-server.tool(
-  'clawdb_reflect',
-  'Trigger a memory reflection / consolidation job.',
-  {
-    job_type: z.enum(['full', 'incremental', 'archive']).optional().describe('Job type'),
-    dry_run: z.boolean().optional().describe('Simulate without making changes'),
-  },
-  async ({ job_type, dry_run }) => {
-    const job = await db.reflect.trigger({
-      jobType: (job_type ?? 'full') as Parameters<typeof db.reflect.trigger>[0] extends { jobType?: infer T } ? T : never,
-      dryRun: dry_run,
-    });
-    return { content: [{ type: 'text', text: JSON.stringify(job) }] };
-  }
-);
-
-server.tool(
-  'clawdb_status',
-  'Return a health and status report from ClawDB.',
-  {},
-  async () => {
-    const status = await db.sync.status();
-    return { content: [{ type: 'text', text: JSON.stringify(status, null, 2) }] };
-  }
-);
-
-// ──────────────────────────────────────────────────────────────
-// Resources
-// ──────────────────────────────────────────────────────────────
-
-server.resource('memory', 'clawdb://memories', async (uri) => {
-  const memories = await db.memory.list({ limit: 50 });
+function clawdbClaudeConfigBlock(): Record<string, unknown> {
   return {
-    contents: [
-      {
-        uri: uri.href,
-        mimeType: 'application/json',
-        text: JSON.stringify(memories, null, 2),
-      },
-    ],
+    mcpServers: {
+      clawdb: {
+        command: 'npx',
+        args: ['-y', '@clawdb/mcp-adapter@latest'],
+        env: {
+          CLAWDB_ENDPOINT: 'http://localhost:50050',
+          CLAWDB_AGENT_ID: 'claude-desktop'
+        }
+      }
+    }
   };
-});
+}
 
-server.resource('branch', 'clawdb://branches', async (uri) => {
-  const branches = await db.branches.list();
-  return {
-    contents: [
-      {
-        uri: uri.href,
-        mimeType: 'application/json',
-        text: JSON.stringify(branches, null, 2),
-      },
-    ],
-  };
-});
+function printClaudeConfig(): void {
+  process.stdout.write(`${JSON.stringify(clawdbClaudeConfigBlock(), null, 2)}\n`);
+}
 
-server.resource(
-  'profile',
-  'clawdb://profile',
-  async (uri) => {
-    const profile = await db.reflect.getProfile();
-    return { contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(profile, null, 2) }] };
+function installClaudeConfig(): void {
+  const configPath = getClaudeConfigPath();
+  mkdirSync(dirname(configPath), { recursive: true });
+
+  let existing: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      existing = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+    } catch {
+      existing = {};
+    }
   }
-);
 
-// ──────────────────────────────────────────────────────────────
-// Start
-// ──────────────────────────────────────────────────────────────
+  const block = clawdbClaudeConfigBlock();
+  const mcpServers = (existing['mcpServers'] as Record<string, unknown> | undefined) ?? {};
+  const next = {
+    ...existing,
+    mcpServers: {
+      ...mcpServers,
+      ...(block['mcpServers'] as Record<string, unknown>)
+    }
+  };
+
+  writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  process.stdout.write('✓ ClawDB added to Claude Desktop. Restart Claude Desktop to activate.\n');
+}
+
+function toMcpText(data: unknown): { content: Array<{ type: 'text'; text: string }> } {
+  return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+}
+
+function formatHits(hits: SearchHit[]): string {
+  if (hits.length === 0) {
+    return 'No results found.';
+  }
+  return hits.map((hit, index) => `${index + 1}. [${hit.score.toFixed(3)}] ${hit.content} (id=${hit.id})`).join('\n');
+}
 
 async function main(): Promise<void> {
-  await db.connect().catch(() => {
-    // Connection is best-effort at startup; each tool call will surface errors.
+  if (process.env.CLAWDB_ENDPOINT && !process.env.CLAWDB_URL) {
+    process.env.CLAWDB_URL = process.env.CLAWDB_ENDPOINT;
+  }
+
+  if (process.argv.includes('--print-config')) {
+    printClaudeConfig();
+    return;
+  }
+
+  if (process.argv.includes('--install-claude')) {
+    installClaudeConfig();
+    return;
+  }
+
+  const server = new McpServer({ name: 'clawdb', version: PACKAGE_VERSION });
+
+  const db = new ClawDB(resolveClientConfig());
+
+  const requireDb = (): ClawDB => {
+    return db;
+  };
+
+  server.tool(
+    'clawdb_remember',
+    'Store information in the agent\'s persistent memory database.',
+    {
+      content: z.string().describe('What to remember'),
+      memory_type: z.string().default('message'),
+      tags: z.array(z.string()).optional()
+    },
+    async ({ content, memory_type, tags }) => {
+      const id = await requireDb().memory.remember(content, { memoryType: memory_type, tags });
+      return toMcpText({ id });
+    }
+  );
+
+  server.tool(
+    'clawdb_remember_bulk',
+    'Store many memories in one call for fast context ingestion.',
+    {
+      memories: z.array(z.object({
+        content: z.string(),
+        memory_type: z.string().optional(),
+        tags: z.array(z.string()).optional()
+      })).min(1).max(100)
+    },
+    async ({ memories }) => {
+      const ids = await Promise.all(
+        memories.map((item) => requireDb().memory.remember(item.content, {
+          memoryType: item.memory_type ?? 'message',
+          tags: item.tags
+        }))
+      );
+      return toMcpText({ ids });
+    }
+  );
+
+  server.tool(
+    'clawdb_search',
+    'Search the agent\'s memory database by meaning or keywords.',
+    {
+      query: z.string(),
+      top_k: z.number().min(1).max(50).default(5),
+      semantic: z.boolean().default(true)
+    },
+    async ({ query, top_k, semantic }) => {
+      const results = await requireDb().memory.search(query, { topK: top_k, semantic });
+      return { content: [{ type: 'text', text: formatHits(results) }] };
+    }
+  );
+
+  server.tool(
+    'clawdb_recall',
+    'Retrieve specific memories by ID.',
+    {
+      ids: z.array(z.string()).min(1)
+    },
+    async ({ ids }) => {
+      const memories = await requireDb().memory.recall(ids);
+      return toMcpText({ memories });
+    }
+  );
+
+  server.tool(
+    'clawdb_branch_fork',
+    'Fork the agent\'s memory state for experimentation.',
+    { name: z.string() },
+    async ({ name }) => {
+      const branch = await requireDb().branch.fork(name);
+      return toMcpText({ branch_id: branch.id });
+    }
+  );
+
+  server.tool(
+    'clawdb_branch_merge',
+    'Merge an experimental branch back into main memory.',
+    {
+      branch_id: z.string(),
+      strategy: z.enum(['last-write', 'source-wins']).default('last-write')
+    },
+    async ({ branch_id, strategy }) => {
+      const result = await requireDb().branch.merge(branch_id, strategy);
+      return toMcpText(result);
+    }
+  );
+
+  server.tool(
+    'clawdb_status',
+    'Check ClawDB connection and component health.',
+    {},
+    async () => {
+      const health = await requireDb().health.check();
+      return toMcpText(health);
+    }
+  );
+
+  server.resource('recent', 'clawdb://recent', async (uri) => {
+    const list = await requireDb().memory.list({ limit: 20 });
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(list.hits, null, 2)
+        }
+      ]
+    };
   });
+
+  server.resource('memory-by-id', 'clawdb://memory/{id}', async (uri) => {
+    const id = uri.pathname.split('/').pop();
+    if (!id) {
+      return {
+        contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify({ error: 'missing id' }) }]
+      };
+    }
+    const [memory] = await requireDb().memory.recall([id]);
+    return {
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: 'application/json',
+          text: JSON.stringify(memory ?? null, null, 2)
+        }
+      ]
+    };
+  });
+
+  const maybePromptRegistrar = (server as unknown as {
+    prompt?: (
+      name: string,
+      description: string,
+      schema: Record<string, z.ZodTypeAny>,
+      handler: (args: Record<string, unknown>) => Promise<{ messages: Array<{ role: string; content: { type: string; text: string } }> }>
+    ) => void;
+  }).prompt;
+
+  if (typeof maybePromptRegistrar === 'function') {
+    maybePromptRegistrar(
+      'clawdb_load_context',
+      'Search memory for the current topic and format the result for system prompt injection.',
+      { topic: z.string() },
+      async ({ topic }) => {
+        const hits = await requireDb().memory.search(String(topic), { topK: 5, semantic: true });
+        return {
+          messages: [
+            {
+              role: 'system',
+              content: {
+                type: 'text',
+                text: `Relevant prior context:\n${formatHits(hits)}`
+              }
+            }
+          ]
+        };
+      }
+    );
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

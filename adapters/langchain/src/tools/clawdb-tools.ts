@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { ClawDB, MemoryType } from '@clawdb/sdk';
+import type { ClawDB } from '@clawdb/sdk';
+import { DynamicStructuredTool } from '@langchain/core/tools';
 
 /**
  * Creates an array of LangChain StructuredTool-compatible objects backed by ClawDB.
@@ -7,89 +8,63 @@ import type { ClawDB, MemoryType } from '@clawdb/sdk';
  * Compatible with LangChain ^0.2 / @langchain/core ^0.2.
  * Uses duck-typing so @langchain/core is a peer dep only.
  */
-export function createClawDBTools(client: ClawDB): ClawDBToolDef[] {
-  return [
-    {
+export function createClawDBTools(client: ClawDB): DynamicStructuredTool[] {
+  const tools = [
+    new DynamicStructuredTool({
       name: 'clawdb_remember',
-      description: 'Store information in ClawDB persistent agent memory for future retrieval.',
+      description: 'Store important information that should persist across conversations. Use this for user preferences, decisions, facts, or constraints you may need later.',
       schema: z.object({
         content: z.string().describe('The content to remember'),
         memory_type: z
-          .enum(['context', 'task', 'tool_output', 'session', 'reasoning_trace', 'message', 'summary'])
+          .enum(['message', 'context', 'task', 'tool_output', 'session', 'summary'])
           .optional()
           .describe('Memory type'),
         tags: z.array(z.string()).optional().describe('Tags to attach'),
       }),
-      async invoke({ content, memory_type, tags }: { content: string; memory_type?: string; tags?: string[] }) {
+      func: async ({ content, memory_type, tags }: { content: string; memory_type?: string; tags?: string[] }) => {
         const id = await client.memory.remember(content, {
-          memoryType: memory_type as MemoryType | undefined,
+          memoryType: memory_type,
           tags,
         });
         return JSON.stringify({ memory_id: id, status: 'stored' });
       },
-    },
-    {
+    }),
+    new DynamicStructuredTool({
       name: 'clawdb_search',
-      description: 'Search ClawDB agent memory using semantic or keyword search.',
+      description: 'Search long-term memory for facts relevant to the current user request. Prefer this before asking clarifying questions when past context can help.',
       schema: z.object({
         query: z.string().describe('Search query'),
-        top_k: z.number().min(1).max(20).optional().describe('Max results to return'),
+        top_k: z.number().min(1).max(50).optional().describe('Max results to return'),
       }),
-      async invoke({ query, top_k }: { query: string; top_k?: number }) {
+      func: async ({ query, top_k }: { query: string; top_k?: number }) => {
         const results = await client.memory.search(query, { topK: top_k ?? 5, semantic: true });
+        return results
+          .map((r, index) => `${index + 1}. [${r.score.toFixed(3)}] ${r.content} (id=${r.id})`)
+          .join('\n');
+      },
+    }),
+    new DynamicStructuredTool({
+      name: 'clawdb_recall',
+      description: 'Load one or more exact memory entries by ID when you already know which saved items you need to reference.',
+      schema: z.object({
+        ids: z.array(z.string()).min(1).max(50).describe('Memory IDs to retrieve'),
+      }),
+      func: async ({ ids }: { ids: string[] }) => {
+        const results = await client.memory.recall(ids);
         return JSON.stringify({
-          results: results.map(r => ({
-            content: r.memory.content,
+          memories: results.map((r) => ({
             score: r.score,
-            id: r.memory.id,
-            memory_type: r.memory.memoryType,
-            tags: r.memory.tags,
+            id: r.id,
+            content: r.content,
+            memory_type: r.memoryType,
+            tags: r.tags,
           })),
         });
       },
-    },
-    {
-      name: 'clawdb_branch',
-      description: 'Manage ClawDB memory branches (fork, merge, diff).',
-      schema: z.object({
-        action: z.enum(['fork', 'merge', 'diff']).describe('Branch action'),
-        name: z.string().describe('Branch name'),
-        target: z.string().optional().describe('Target branch for merge/diff'),
-        strategy: z.enum(['ours', 'theirs', 'union']).optional().describe('Merge strategy'),
-      }),
-      async invoke({ action, name, target, strategy }: {
-        action: 'fork' | 'merge' | 'diff';
-        name: string;
-        target?: string;
-        strategy?: 'ours' | 'theirs' | 'union';
-      }) {
-        switch (action) {
-          case 'fork': {
-            const branch = await client.branches.fork(name);
-            return JSON.stringify({ branch_id: branch.id, name: branch.name, status: 'created' });
-          }
-          case 'merge': {
-            const result = await client.branches.merge(name, {
-              into: target ?? 'trunk',
-              strategy: strategy ?? 'union',
-            });
-            return JSON.stringify({ applied: result.applied, conflicts: result.conflicts.length });
-          }
-          case 'diff': {
-            const diff = await client.branches.diff(name, target ?? 'trunk');
-            return JSON.stringify(diff);
-          }
-        }
-      },
-    },
+    }),
   ];
-}
 
-export interface ClawDBToolDef {
-  name: string;
-  description: string;
-  schema: z.ZodObject<z.ZodRawShape>;
-  invoke(args: Record<string, unknown>): Promise<string>;
+  return tools as unknown as DynamicStructuredTool[];
 }
 
 /**
@@ -106,13 +81,13 @@ export class ClawDBMemoryStore {
   ): Promise<Array<{ pageContent: string; metadata: Record<string, unknown> }>> {
     const results = await this.client.memory.search(query, { topK: k, semantic: true });
     return results.map(r => ({
-      pageContent: r.memory.content,
+      pageContent: r.content,
       metadata: {
-        id: r.memory.id,
+        id: r.id,
         score: r.score,
-        memoryType: r.memory.memoryType,
-        tags: r.memory.tags,
-        ...r.memory.metadata,
+        memoryType: r.memoryType,
+        tags: r.tags,
+        ...r.metadata,
       },
     }));
   }

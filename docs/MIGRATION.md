@@ -123,3 +123,19 @@ Run `clawdb config migrate` to automatically convert an existing config file.
 
 API keys now follow the format `ck_live_<token>` (live) or `ck_test_<token>` (test).
 Old bare tokens are no longer accepted. Regenerate via the ClawDB dashboard.
+
+---
+
+## CLI package location and legacy wrapper migration
+
+The canonical CLI package is now `@clawdb/cli` in `packages/cli/`.
+
+If you previously referenced the legacy wrapper in `sdks/cli-wrapper/`, migrate to the canonical package:
+
+1. Install or link `@clawdb/cli` from `packages/cli/`.
+2. Use the `clawdb` command as before.
+3. Stop consuming `sdks/cli-wrapper/` for new development.
+
+Notes:
+- The legacy wrapper is marked private and renamed to avoid package-name collisions.
+- New CLI command behavior includes explicit `--json` support across command groups, including `memory`, `branch`, `sync`, `reflect`, `cloud`, and `mcp install-*` commands.

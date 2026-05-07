@@ -1,11 +1,12 @@
 {
-  "name": "@clawdb/cli",
+  "name": "@clawdb/cli-wrapper-legacy",
   "version": "0.1.0",
-  "description": "Unified CLI for ClawDB — the cognitive database for AI agents",
+  "description": "Legacy CLI wrapper (deprecated; use @clawdb/cli from packages/cli)",
   "license": "Apache-2.0",
+  "private": true,
   "type": "module",
   "bin": {
-    "clawdb": "dist/index.js"
+    "clawdb-legacy": "dist/index.js"
   },
   "scripts": {
     "build": "tsup",

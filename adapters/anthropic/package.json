@@ -1,6 +1,6 @@
 {
-  "name": "@clawdb/openai-agents",
-  "version": "0.1.2",
+  "name": "@clawdb/anthropic",
+  "version": "0.1.1",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -17,15 +17,12 @@
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
-  "dependencies": {
-    "zod": "^3.23.8"
-  },
   "peerDependencies": {
-    "@clawdb/sdk": ">=0.1.5",
-    "@openai/agents": "^0.0.7"
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@clawdb/sdk": ">=0.1.5"
   },
   "devDependencies": {
-    "@openai/agents": "^0.0.7",
+    "@anthropic-ai/sdk": "^0.39.0",
     "tsup": "^8.2.4",
     "vitest": "^1.6.1"
   },

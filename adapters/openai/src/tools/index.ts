@@ -1,4 +1,4 @@
-import type { ClawDB, MemoryType, MemoryRecord } from '@clawdb/sdk';
+import type { ClawDB } from '@clawdb/sdk';
 
 /**
  * A tool definition compatible with the OpenAI Agents SDK (Responses API format).
@@ -18,8 +18,6 @@ export interface Tool {
 export interface ClawDBAgentToolsOptions {
   /** Enable branch fork/merge tools. Default: false */
   enableBranching?: boolean;
-  /** Enable sync tool. Default: false */
-  enableSync?: boolean;
 }
 
 /**
@@ -31,15 +29,12 @@ export interface ClawDBAgentToolsOptions {
  * const runner = new OpenAIAgents({ tools });
  * ```
  */
-export function createClawDBAgentTools(
-  _client: ClawDB,
-  options: ClawDBAgentToolsOptions = {}
-): Tool[] {
+export function createClawDBAgentTools(_client: ClawDB, options: ClawDBAgentToolsOptions = {}): Tool[] {
   const tools: Tool[] = [
     {
       type: 'function',
-      name: 'clawdb_remember',
-      description: 'Store information in ClawDB persistent agent memory for future retrieval.',
+      name: 'remember_memory',
+      description: 'Store important information that should persist across future turns. Use this for preferences, facts, decisions, and constraints.',
       parameters: {
         type: 'object',
         properties: {
@@ -58,8 +53,8 @@ export function createClawDBAgentTools(
     },
     {
       type: 'function',
-      name: 'clawdb_search',
-      description: 'Semantically search ClawDB agent memory for relevant information.',
+      name: 'search_memory',
+      description: 'Search long-term memory for details relevant to the current request before answering.',
       parameters: {
         type: 'object',
         properties: {
@@ -73,8 +68,8 @@ export function createClawDBAgentTools(
     },
     {
       type: 'function',
-      name: 'clawdb_recall',
-      description: 'Retrieve specific memory records by their IDs.',
+      name: 'recall_memory',
+      description: 'Retrieve exact memory records by ID when specific saved entries are required.',
       parameters: {
         type: 'object',
         properties: {
@@ -84,27 +79,14 @@ export function createClawDBAgentTools(
         additionalProperties: false,
       },
     },
-    {
-      type: 'function',
-      name: 'clawdb_forget',
-      description: 'Soft-delete a memory record from ClawDB.',
-      parameters: {
-        type: 'object',
-        properties: {
-          memory_id: { type: 'string', description: 'The ID of the memory to delete' },
-        },
-        required: ['memory_id'],
-        additionalProperties: false,
-      },
-    },
   ];
 
   if (options.enableBranching) {
     tools.push(
       {
         type: 'function',
-        name: 'clawdb_branch_fork',
-        description: 'Fork a new isolated memory branch from the current state.',
+        name: 'fork_branch',
+        description: 'Create an isolated experimental memory branch for trying alternate plans safely.',
         parameters: {
           type: 'object',
           properties: {
@@ -117,37 +99,20 @@ export function createClawDBAgentTools(
       },
       {
         type: 'function',
-        name: 'clawdb_branch_merge',
-        description: 'Merge a memory branch back into the target branch.',
+        name: 'merge_branch',
+        description: 'Merge an experimental branch back to the main branch when changes are ready.',
         parameters: {
           type: 'object',
           properties: {
             source: { type: 'string', description: 'Source branch to merge from' },
             target: { type: 'string', description: 'Target branch (default: trunk)' },
-            strategy: { type: 'string', enum: ['ours', 'theirs', 'union'], description: 'Merge strategy' },
+            strategy: { type: 'string', enum: ['last-write', 'source-wins'], description: 'Merge strategy' },
           },
           required: ['source'],
           additionalProperties: false,
         },
       }
     );
-  }
-
-  if (options.enableSync) {
-    tools.push({
-      type: 'function',
-      name: 'clawdb_sync',
-      description: 'Trigger a push+pull sync with ClawDB Cloud.',
-      parameters: {
-        type: 'object',
-        properties: {
-          push_only: { type: 'boolean', description: 'Only push, do not pull' },
-          pull_only: { type: 'boolean', description: 'Only pull, do not push' },
-        },
-        required: [],
-        additionalProperties: false,
-      },
-    });
   }
 
   return tools;
