@@ -4,16 +4,12 @@ import { ClawDBPlugin, formatMemoryContext, withClawDB } from '../index.js';
 
 function makeDb() {
   return {
-    memory: {
-      search: vi.fn().mockResolvedValue([{ id: '1', content: 'User prefers async code patterns.', score: 0.94, memoryType: 'message', tags: [], metadata: {}, createdAt: new Date() }]),
-      remember: vi.fn().mockResolvedValue('m-1'),
-      recall: vi.fn().mockResolvedValue([])
-    },
-    branch: {
-      fork: vi.fn().mockResolvedValue({ id: 'b-1' }),
-      merge: vi.fn().mockResolvedValue({ success: true, applied: 1, conflicts: [] })
-    },
-    sync: { now: vi.fn().mockResolvedValue({ connected: true }) },
+    search: vi.fn().mockResolvedValue([{ id: '1', content: 'User prefers async code patterns.', score: 0.94, memoryType: 'message', tags: [], metadata: {}, createdAt: new Date() }]),
+    rememberTyped: vi.fn().mockResolvedValue('m-1'),
+    recall: vi.fn().mockResolvedValue([]),
+    branch: vi.fn().mockResolvedValue({ branchId: 'b-1', name: 'sandbox' }),
+    merge: vi.fn().mockResolvedValue({ success: true, applied: 1, conflicts: 0 }),
+    sync: vi.fn().mockResolvedValue({ connected: true }),
     close: vi.fn()
   };
 }
@@ -44,6 +40,6 @@ describe('openclaw adapter', () => {
     await plugin.onResponse?.({ userMessage: 'u', assistantMessage: 'a' }, ctx);
 
     expect(ctx.injectContext).toHaveBeenCalled();
-    expect(db.memory.remember).toHaveBeenCalledTimes(2);
+    expect(db.rememberTyped).toHaveBeenCalledTimes(2);
   });
 });

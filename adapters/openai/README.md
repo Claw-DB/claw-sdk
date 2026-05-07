@@ -1,50 +1,41 @@
 # @clawdb/openai-agents
 
-OpenAI Agents SDK integration for ClawDB memory tools.
+OpenAI Agents SDK integration for ClawDB.
 
 ## Install
 
-npm:
+```bash
+npm install @clawdb/openai-agents @clawdb/sdk @openai/agents
+```
 
-npm install @clawdb/openai-agents @clawdb/sdk openai
+## Exports
 
-pnpm:
+- `createClawDBAgentTools(client)`
+- `ClawDBToolHandler`
+- `withClawDBMemory(agent, client)`
 
-pnpm add @clawdb/openai-agents @clawdb/sdk openai
-
-## Usage
+## Quick Start
 
 ```ts
 import { ClawDB } from '@clawdb/sdk';
-import {
-  createClawDBAgentTools,
-  ClawDBToolHandler,
-  withClawDBMemory,
-} from '@clawdb/openai-agents';
+import { createClawDBAgentTools, ClawDBToolHandler } from '@clawdb/openai-agents';
 
-const db = new ClawDB({ endpoint: 'http://localhost:50050', agentId: 'agent-1' });
-await db.connect();
-
-const tools = createClawDBAgentTools(db, {
-  enableBranching: true,
-  enableSync: true,
-});
-
+const db = new ClawDB({ endpoint: 'http://localhost:50050', agentId: 'openai-agent' });
+const tools = createClawDBAgentTools(db);
 const handler = new ClawDBToolHandler(db);
-const result = await handler.handle('clawdb_remember', {
-  content: 'Customer likes weekly status updates',
-  memory_type: 'context',
+
+const result = await handler.handle('remember_memory', {
+  content: 'The deployment window starts at 17:00 UTC',
+  memory_type: 'context'
 });
 
-const wrappedAgent = withClawDBMemory(myAgent, db);
+console.log(result, tools.length);
 ```
 
-## Included tool names
+## Tool Coverage
 
-- clawdb_remember
-- clawdb_search
-- clawdb_recall
-- clawdb_forget
-- clawdb_branch_fork (optional)
-- clawdb_branch_merge (optional)
-- clawdb_sync (optional)
+- Memory: `remember_memory`, `update_memory`, `delete_memory`, `list_memories`, `search_memory`, `recall_memory`
+- Branches: `fork_branch`, `list_branches`, `get_branch`, `get_trunk_branch`, `diff_branches`, `merge_branch`, `discard_branch`, `archive_branch`
+- Sync: `sync`, `sync_push`, `sync_pull`, `sync_status`
+- Reflection: `reflect`, `reflect_facts`, `reflect_preferences`, `reflect_contradictions`, `reflect_resolve`
+- Transactions: `tx_begin`, `tx_remember`, `tx_commit`, `tx_rollback`

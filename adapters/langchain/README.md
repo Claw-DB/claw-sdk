@@ -1,51 +1,40 @@
 # @clawdb/langchain
 
-LangChain.js integration for ClawDB persistent memory.
+LangChain.js integration for ClawDB retrieval, chat history, and tools.
 
 ## Install
 
-npm:
-
-npm install @clawdb/langchain @clawdb/sdk @langchain/core
-
-pnpm:
-
-pnpm add @clawdb/langchain @clawdb/sdk @langchain/core
-
-## Usage
-
-```ts
-import { ClawDB } from '@clawdb/sdk';
-import {
-  ClawDBRetriever,
-  ClawDBChatMessageHistory,
-  createClawDBTools,
-  ClawDBMemoryStore,
-} from '@clawdb/langchain';
-
-const db = new ClawDB({ endpoint: 'http://localhost:50050', agentId: 'agent-1' });
-await db.connect();
-
-const retriever = new ClawDBRetriever({ client: db, topK: 6 });
-const docs = await retriever.getRelevantDocuments('release checklist');
-
-const chatHistory = new ClawDBChatMessageHistory({
-  client: db,
-  sessionId: 'chat-42',
-});
-await chatHistory.addUserMessage('What happened in the last deploy?');
-
-const tools = createClawDBTools(db, { defaultMemoryType: 'tool_output' });
-
-const memoryStore = new ClawDBMemoryStore(db);
-await memoryStore.addDocuments([
-  { pageContent: 'Deploy runbook v3', metadata: { source: 'ops' } },
-]);
+```bash
+npm install @clawdb/langchain @clawdb/sdk @langchain/core langchain
 ```
 
 ## Exports
 
-- ClawDBRetriever
-- ClawDBChatMessageHistory
-- createClawDBTools
-- ClawDBMemoryStore
+- `ClawDBRetriever`
+- `ClawDBChatMessageHistory`
+- `createClawDBTools(client)`
+- `ClawDBMemoryStore`
+
+## Quick Start
+
+```ts
+import { ClawDB } from '@clawdb/sdk';
+import { ClawDBRetriever, ClawDBChatMessageHistory, createClawDBTools } from '@clawdb/langchain';
+
+const db = new ClawDB({ endpoint: 'http://localhost:50050', agentId: 'langchain-agent' });
+
+const retriever = new ClawDBRetriever({ client: db, topK: 5 });
+const history = new ClawDBChatMessageHistory({ client: db, sessionId: 'chat-1' });
+const tools = createClawDBTools(db);
+
+console.log(await retriever.getRelevantDocuments('deployment checklist'));
+console.log(tools.length, history);
+```
+
+## Tool Coverage
+
+- Memory: `clawdb_remember`, `clawdb_update_memory`, `clawdb_delete_memory`, `clawdb_list_memories`, `clawdb_search`, `clawdb_recall`
+- Branches: `clawdb_branch_fork`, `clawdb_branch_list`, `clawdb_branch_get`, `clawdb_branch_trunk`, `clawdb_branch_diff`, `clawdb_branch_merge`, `clawdb_branch_discard`, `clawdb_branch_archive`
+- Sync: `clawdb_sync`, `clawdb_sync_push`, `clawdb_sync_pull`, `clawdb_sync_status`
+- Reflection: `clawdb_reflect`, `clawdb_reflect_facts`, `clawdb_reflect_preferences`, `clawdb_reflect_contradictions`, `clawdb_reflect_resolve`
+- Transactions: `clawdb_tx_begin`, `clawdb_tx_remember`, `clawdb_tx_commit`, `clawdb_tx_rollback`

@@ -1,45 +1,42 @@
 # @clawdb/vercel-ai
 
-Vercel AI SDK integration for ClawDB tools and middleware.
+Vercel AI SDK integration for ClawDB.
 
 ## Install
 
-npm:
+```bash
+npm install @clawdb/vercel-ai @clawdb/sdk ai
+```
 
-npm install @clawdb/vercel-ai @clawdb/sdk ai zod
+## Exports
 
-pnpm:
+- `clawdbTools(client)`
+- `clawdbMiddleware(client)`
+- `useClawDB(options)`
 
-pnpm add @clawdb/vercel-ai @clawdb/sdk ai zod
-
-## Usage
+## Quick Start
 
 ```ts
 import { generateText } from 'ai';
-import { openai } from '@ai-sdk/openai';
 import { ClawDB } from '@clawdb/sdk';
 import { clawdbTools, clawdbMiddleware } from '@clawdb/vercel-ai';
 
-const db = new ClawDB({ endpoint: 'http://localhost:50050', agentId: 'agent-1' });
-await db.connect();
-
-const tools = clawdbTools(db);
+const db = new ClawDB({ endpoint: 'http://localhost:50050', agentId: 'vercel-ai-agent' });
 
 const result = await generateText({
-  model: openai('gpt-4o-mini'),
-  tools,
-  prompt: 'Summarize recent incidents and remember key findings.',
-  experimental_middleware: [clawdbMiddleware(db)],
+  model,
+  prompt: 'Remember that the customer wants weekly reports.',
+  tools: clawdbTools(db),
+  experimental_transform: clawdbMiddleware(db)
 });
+
+console.log(result.text);
 ```
 
-## React hook
+## Tool Coverage
 
-```tsx
-import { useClawDB } from '@clawdb/vercel-ai';
-
-function App() {
-  const { db, status, error } = useClawDB({ endpoint: 'http://localhost:50050' });
-  return <div>{status}</div>;
-}
-```
+- Memory: `remember`, `update_memory`, `delete_memory`, `list_memories`, `search`, `recall`
+- Branches: `branch_fork`, `branch_list`, `branch_get`, `branch_trunk`, `branch_diff`, `branch_merge`, `branch_discard`, `branch_archive`
+- Sync: `sync`, `sync_push`, `sync_pull`, `sync_status`
+- Reflection: `reflect`, `reflect_facts`, `reflect_preferences`, `reflect_contradictions`, `reflect_resolve_contradiction`
+- Transactions: `tx_begin`, `tx_remember`, `tx_commit`, `tx_rollback`

@@ -1,90 +1,55 @@
-# clawdb (Rust SDK)
+# clawdb-client
 
-The official Rust client for **ClawDB** — persistent, branchable, semantically-searchable agent memory.
+Official Rust client for ClawDB.
+
+## Install
 
 ```toml
 [dependencies]
-clawdb = "0.1"
-tokio = { version = "1", features = ["full"] }
+clawdb-client = "0.1.0"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-## Quick start
+## Quick Start
 
 ```rust
-use clawdb::Client;
+use clawdb_client::{ClawDBBuilder, Result};
 
 #[tokio::main]
-async fn main() -> clawdb::Result<()> {
-    let db = Client::builder()
+async fn main() -> Result<()> {
+    let db = ClawDBBuilder::new()
         .endpoint("http://localhost:50050")
-        .agent_id("my-agent")
+        .agent_id("rust-agent")
         .build()
         .await?;
 
-    // Store a memory
-    let id = db.memory()
-        .remember("Deploy at 3 PM UTC")
-        .memory_type("task")
-        .tags(["ops", "deploy"])
-        .call()
-        .await?;
+    let memory_id = db.remember_typed("Track the weekly release checklist", None).await?;
+    let hits = db.search("release checklist", None).await?;
+    let branch = db.branch("release-dry-run", None).await?;
 
-    // Search
-    let results = db.memory()
-        .search("deploy schedule")
-        .top_k(5)
-        .call()
-        .await?;
-
-    for result in &results {
-        println!("{:.3}  {}", result.score, result.memory.content);
-    }
-
-    // Recall
-    let memories = db.memory().recall(&[&id]).call().await?;
-
-    // Forget
-    db.memory().forget(&id).call().await?;
-
+    println!("{} {} {}", memory_id, hits.len(), branch.id);
     Ok(())
 }
 ```
 
-## Branches
+## API Surface
 
-```rust
-let branch = db.branches().fork("my-experiment").call().await?;
-db.branches()
-    .merge("my-experiment")
-    .into_branch("trunk")
-    .strategy(MergeStrategy::Union)
-    .call()
-    .await?;
-```
+The Rust client covers:
+- health and readiness
+- session create, validate, revoke, and count
+- memory remember, typed remember, update, search, recall, list, and delete
+- branch fork, lookup, diff, merge, discard, and archive
+- sync run, push, pull, reconcile, and status
+- reflection jobs, facts, preferences, contradictions, and resolution
+- transaction begin, remember, typed remember, commit, and rollback
 
 ## Configuration
 
-```rust
-let db = Client::builder()
-    .endpoint("http://localhost:50050")
-    .api_key("ck_live_...")
-    .agent_id("my-agent")
-    .timeout(std::time::Duration::from_secs(30))
-    .tls(false)
-    .build()
-    .await?;
-```
-
-Or set `CLAWDB_ENDPOINT`, `CLAWDB_API_KEY`, `CLAWDB_AGENT_ID` env vars and call `Client::from_env().await?`.
-
-## Docs
-
-Full API reference: <https://docs.rs/clawdb>
-
-## Development
-
-```bash
-cd sdks/rust
-cargo test
-cargo clippy
-```
+Builder fields:
+- `endpoint()`
+- `api_key()`
+- `agent_id()`
+- `workspace()`
+- `role()`
+- `timeout_ms()`
+- `tls()`

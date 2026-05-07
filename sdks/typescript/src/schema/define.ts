@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import type { ClawDB } from '../client.js';
-import type { MemoryType, SearchResult, RememberOptions } from '../types.js';
+import type { ClawDB, SearchHit } from '../core.js';
+import type { MemoryType, RememberOptions } from '../types.js';
 
 export interface MemorySchema<T extends z.ZodObject<z.ZodRawShape>> {
   memoryType: MemoryType;
@@ -30,7 +30,7 @@ export interface MemorySchema<T extends z.ZodObject<z.ZodRawShape>> {
     db: ClawDB,
     query: string,
     filter?: Partial<z.infer<T>>
-  ): Promise<SearchResult[]>;
+  ): Promise<SearchHit[]>;
 }
 
 /**
@@ -75,15 +75,12 @@ export function defineMemorySchema<T extends z.ZodObject<z.ZodRawShape>>(options
     async remember(
       db: ClawDB,
       content: string,
-      metadata: z.infer<T>,
+      _metadata: z.infer<T>,
       extraOptions?: RememberOptions
     ): Promise<string> {
-      const validated = metadataSchema.parse(metadata);
-      return db.memory.remember(content, {
-        memoryType,
+      return db.rememberTyped(content, {
+        type: memoryType as string,
         tags: [...defaultTags, ...(extraOptions?.tags ?? [])],
-        metadata: validated as Record<string, unknown>,
-        ...extraOptions,
       });
     },
 
@@ -91,8 +88,8 @@ export function defineMemorySchema<T extends z.ZodObject<z.ZodRawShape>>(options
       db: ClawDB,
       query: string,
       filter?: Partial<z.infer<T>>
-    ): Promise<SearchResult[]> {
-      return db.memory.search(query, {
+    ): Promise<SearchHit[]> {
+      return db.search(query, {
         filter: filter ? (filter as Record<string, unknown>) : undefined,
       });
     },

@@ -14,6 +14,7 @@ from clawdb.provision import resolve_endpoint
 from clawdb.reflect import ReflectClient
 from clawdb.session import SessionClient
 from clawdb.sync_client import SyncClientWrapper
+from clawdb.transactions import TxClient
 
 log = structlog.get_logger(__name__)
 
@@ -55,6 +56,7 @@ class ClawDB:
         self._branch_client: BranchClient | None = None
         self._sync_client: SyncClientWrapper | None = None
         self._reflect_client: ReflectClient | None = None
+        self._tx_client: TxClient | None = None
 
     @classmethod
     def from_env(cls) -> "ClawDB":
@@ -137,3 +139,9 @@ class ClawDB:
         if self._reflect_client is None:
             self._reflect_client = ReflectClient(self._stub, self._require_session(), self._config.api_key)
         return self._reflect_client
+
+    @property
+    def tx(self) -> TxClient:
+        if self._tx_client is None:
+            self._tx_client = TxClient(self._stub, self._require_session(), self._config.api_key)
+        return self._tx_client

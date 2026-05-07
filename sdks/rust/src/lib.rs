@@ -35,8 +35,9 @@ pub use builder::ClawDBBuilder;
 pub use client::{ClawDB, ClawDBClient};
 pub use error::{SdkError, SdkResult};
 pub use models::{
-    BranchInfo, DiffResult, MemoryRecord, MemoryType, MergeResult, RememberOptions, SearchOptions, SearchHit,
-    SyncResult,
+    BranchInfo, DiffResult, HealthResponse, MemoryRecord, MemoryType, MergeResult, ReflectJob,
+    RememberOptions, SearchHit, SearchOptions, SessionInfo, SyncActionResult, SyncResult,
+    SyncStatusResult, TxInfo,
 };
 
 pub type Result<T> = SdkResult<T>;

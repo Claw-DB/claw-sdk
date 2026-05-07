@@ -16,9 +16,13 @@ async function run(): Promise<void> {
     filter: { kind: 'note' }
   };
 
-  const id: string = await db.memory.remember('hello', rememberOptions);
-  const hits: SearchHit[] = await db.memory.search('hello', searchOptions);
-  const _recall: SearchHit[] = await fromEnv.memory.recall([id]);
+  const id: string = await db.rememberTyped('hello', {
+    type: rememberOptions.memoryType,
+    tags: rememberOptions.tags,
+    metadata: rememberOptions.metadata
+  });
+  const hits: SearchHit[] = await db.search('hello', searchOptions);
+  const _recall = await fromEnv.recall([id]);
 
   void hits;
 }

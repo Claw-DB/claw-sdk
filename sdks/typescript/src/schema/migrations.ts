@@ -1,4 +1,4 @@
-import type { ClawDB } from '../client.js';
+import type { ClawDB } from '../core.js';
 import type { MemorySchema } from './define.js';
 import type { z } from 'zod';
 
@@ -38,12 +38,14 @@ export class SchemaRegistry {
     const schema = this.schemas.get(schemaName);
     if (!schema) throw new Error(`Schema '${schemaName}' not registered`);
 
-    const memories = await db.memory.list({ memoryType: schema.memoryType });
+    const memories = await db.listMemories({ type: schema.memoryType });
     let migrated = 0;
 
     for (const memory of memories) {
-      const newMetadata = migration.migrate(memory.metadata ?? {});
-      await db.memory.update(memory.id, { metadata: newMetadata });
+      // The flat API UpdateMemory updates content only; re-store the content to re-index
+      const transformed = migration.migrate({}) as { content?: string };
+      const newContent = transformed.content ?? memory.content;
+      await db.updateMemory(memory.id, newContent);
       migrated++;
     }
 

@@ -36,7 +36,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
   afterAll(async () => {
     // Cleanup memories created during tests
     for (const id of createdIds) {
-      await db.memory.forget(id).catch(() => undefined);
+      await db.deleteMemory(id).catch(() => undefined);
     }
     await db.disconnect();
   });
@@ -46,8 +46,8 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
   // ──────────────────────────────────────────────────────────────
 
   it('SDK: remembers and recalls a memory', async () => {
-    const id = await db.memory.remember('Integration test memory', {
-      memoryType: 'context',
+    const id = await db.rememberTyped('Integration test memory', {
+      type: 'context',
       tags: ['integration', 'test'],
     });
     createdIds.push(id);
@@ -56,31 +56,31 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
   });
 
   it('SDK: searches for a stored memory', async () => {
-    const id = await db.memory.remember('TypeScript integration test payload', {
+    const id = await db.rememberTyped('TypeScript integration test payload', {
       tags: ['search-test'],
     });
     createdIds.push(id);
 
-    const results = await db.memory.search('TypeScript integration test', { topK: 5 });
-    const found = results.find(r => r.memory.id === id);
+    const results = await db.search('TypeScript integration test', { topK: 5 });
+    const found = results.find(r => r.id === id);
     expect(found).toBeDefined();
     expect(found!.score).toBeGreaterThan(0);
   });
 
   it('SDK: recalls specific memories by ID', async () => {
-    const id = await db.memory.remember('Recall integration test');
+    const id = await db.remember('Recall integration test');
     createdIds.push(id);
 
-    const memories = await db.memory.recall([id]);
+    const memories = await db.recall([id]);
     expect(memories).toHaveLength(1);
     expect(memories[0]!['content']).toBe('Recall integration test');
   });
 
   it('SDK: forgets (soft-deletes) a memory', async () => {
-    const id = await db.memory.remember('To be forgotten');
-    await db.memory.forget(id);
-    const memories = await db.memory.recall([id]);
-    expect(memories[0]?.['deletedAt']).toBeTruthy();
+    const id = await db.remember('To be forgotten');
+    await db.deleteMemory(id);
+    const memories = await db.recall([id]);
+    expect(memories).toHaveLength(0);
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -89,15 +89,15 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
 
   it('SDK: forks a branch', async () => {
     const branchName = `test-branch-${Date.now()}`;
-    const branch = await db.branches.fork(branchName);
+    const branch = await db.branch(branchName);
     expect(branch.name).toBe(branchName);
-    expect(branch.id).toBeDefined();
+    expect(branch.branchId).toBeDefined();
   });
 
   it('SDK: lists branches including the new one', async () => {
     const branchName = `list-test-${Date.now()}`;
-    await db.branches.fork(branchName);
-    const branches = await db.branches.list();
+    await db.branch(branchName);
+    const branches = await db.listBranches();
     expect(branches.some(b => b.name === branchName)).toBe(true);
   });
 
@@ -106,7 +106,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
   // ──────────────────────────────────────────────────────────────
 
   it('LangChain: ClawDBRetriever retrieves documents', async () => {
-    const id = await db.memory.remember('LangChain retriever integration test');
+    const id = await db.remember('LangChain retriever integration test');
     createdIds.push(id);
 
     const retriever = new ClawDBRetriever({ client: db, topK: 5 });
@@ -129,7 +129,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
 
   it('LangChain: createClawDBTools returns 3 tools with correct names', () => {
     const tools = createLCTools(db);
-    expect(tools.map(t => t.name)).toEqual(['clawdb_remember', 'clawdb_search', 'clawdb_branch']);
+    expect(tools.map(t => t.name)).toEqual(['clawdb_remember', 'clawdb_search', 'clawdb_recall']);
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -144,14 +144,14 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
 
   it('OpenAI: ClawDBToolHandler.handle dispatches clawdb_remember', async () => {
     const handler = new ClawDBToolHandler(db);
-    const result = JSON.parse(await handler.handle('clawdb_remember', { content: 'OAI integration test' }));
+    const result = JSON.parse(await handler.handle('remember_memory', { content: 'OAI integration test' }));
     expect(result.status).toBe('stored');
     if (result.memory_id) createdIds.push(result.memory_id as string);
   });
 
   it('OpenAI: ClawDBToolHandler.handle dispatches clawdb_search', async () => {
     const handler = new ClawDBToolHandler(db);
-    const result = JSON.parse(await handler.handle('clawdb_search', { query: 'OAI integration test' }));
+    const result = JSON.parse(await handler.handle('search_memory', { query: 'OAI integration test' }));
     expect(Array.isArray(result.results)).toBe(true);
   });
 
@@ -162,8 +162,8 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
   it('Vercel AI: clawdbTools.remember.execute stores memory', async () => {
     const tools = clawdbTools(db);
     const result = await tools.remember.execute({ content: 'Vercel AI integration test' });
-    expect(result.status).toBe('stored');
-    if (result.memory_id) createdIds.push(result.memory_id);
+    expect(typeof result.id).toBe('string');
+    if (result.id) createdIds.push(result.id);
   });
 
   it('Vercel AI: clawdbTools.search.execute returns results', async () => {
@@ -172,9 +172,11 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
     expect(Array.isArray(result.results)).toBe(true);
   });
 
-  it('Vercel AI: clawdbTools.branch.execute list returns branches', async () => {
+  it('Vercel AI: clawdbTools.recall.execute returns memories', async () => {
     const tools = clawdbTools(db);
-    const result = await tools.branch.execute({ action: 'list' });
-    expect(Array.isArray(result['branches'])).toBe(true);
+    const id = await db.remember('vercel recall integration test');
+    createdIds.push(id);
+    const result = await tools.recall.execute({ ids: [id] });
+    expect(Array.isArray(result.memories)).toBe(true);
   });
 });

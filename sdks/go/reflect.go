@@ -1,52 +1,23 @@
 package clawdb
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
-	"time"
-
+	"fmt"
 )
 
 // ReflectClient triggers and monitors reflection jobs.
 type ReflectClient struct {
-	cfg     *Config
-	session *Session
-	http    *http.Client
+	*httpClient
 }
 
 func newReflectClient(cfg *Config, session *Session) *ReflectClient {
-	return &ReflectClient{cfg: cfg, session: session, http: &http.Client{Timeout: cfg.Timeout}}
+	return &ReflectClient{newHTTPClient(cfg, session)}
 }
 
-func (r *ReflectClient) post(ctx context.Context, path string, payload interface{}) (map[string]interface{}, error) {
-	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, r.cfg.Endpoint+path, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	if r.session != nil && r.session.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+r.session.Token)
-	} else if r.cfg.APIKey != "" {
-		req.Header.Set("X-Api-Key", r.cfg.APIKey)
-	}
-	resp, err := r.http.Do(req)
-	if err != nil {
-		return nil, &ClawDBError{Code: ErrorCodeUnavailable, Message: err.Error()}
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return nil, FromHTTPResponse(resp.StatusCode, string(raw))
-	}
-	var out map[string]interface{}
-	_ = json.Unmarshal(raw, &out)
-	return out, nil
-}
-
-// Trigger starts a reflection job.
-func (r *ReflectClient) Trigger(ctx context.Context, jobType string, dryRun bool) (*ReflectJob, error) {
-	out, err := r.post(ctx, "/v1/reflect/trigger", map[string]interface{}{"job_type": jobType, "dry_run": dryRun})
+// Trigger starts a reflection job. POST /v1/reflect
+func (r *ReflectClient) Trigger(ctx context.Context) (*ReflectJob, error) {
+	out, err := r.post(ctx, "/v1/reflect", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -56,9 +27,25 @@ func (r *ReflectClient) Trigger(ctx context.Context, jobType string, dryRun bool
 	return &job, nil
 }
 
-// Status polls the status of a reflection job.
-func (r *ReflectClient) Status(ctx context.Context, jobID string) (*ReflectJob, error) {
-	out, err := r.post(ctx, "/v1/reflect/status", map[string]interface{}{"job_id": jobID})
+// ListJobs lists reflection jobs. GET /v1/reflect/jobs
+func (r *ReflectClient) ListJobs(ctx context.Context, agentID, status string, limit, offset int) ([]ReflectJob, error) {
+	path := fmt.Sprintf("/v1/reflect/jobs?agent_id=%s&limit=%d&offset=%d", agentID, limit, offset)
+	if status != "" {
+		path += "&status=" + status
+	}
+	out, err := r.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := json.Marshal(out["jobs"])
+	var jobs []ReflectJob
+	_ = json.Unmarshal(raw, &jobs)
+	return jobs, nil
+}
+
+// GetJob fetches a specific job. GET /v1/reflect/jobs/:job_id
+func (r *ReflectClient) GetJob(ctx context.Context, jobID string) (*ReflectJob, error) {
+	out, err := r.get(ctx, fmt.Sprintf("/v1/reflect/jobs/%s", jobID))
 	if err != nil {
 		return nil, err
 	}
@@ -68,20 +55,25 @@ func (r *ReflectClient) Status(ctx context.Context, jobID string) (*ReflectJob, 
 	return &job, nil
 }
 
-// WaitForCompletion polls until the job finishes or timeout is reached.
-func (r *ReflectClient) WaitForCompletion(ctx context.Context, jobID string, pollInterval, timeout time.Duration) (*ReflectJob, error) {
-	deadline := time.Now().Add(timeout)
-	for {
-		job, err := r.Status(ctx, jobID)
-		if err != nil {
-			return nil, err
-		}
-		if job.Status == "completed" || job.Status == "failed" {
-			return job, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, &ClawDBError{Code: ErrorCodeTimeout, Message: "reflect job timed out"}
-		}
-		time.Sleep(pollInterval)
-	}
+// GetFacts returns extracted facts for an agent. GET /v1/reflect/facts/:agent_id
+func (r *ReflectClient) GetFacts(ctx context.Context, agentID string) (map[string]interface{}, error) {
+	return r.get(ctx, fmt.Sprintf("/v1/reflect/facts/%s", agentID))
+}
+
+// GetPreferences returns preferences for an agent. GET /v1/reflect/preferences/:agent_id
+func (r *ReflectClient) GetPreferences(ctx context.Context, agentID string) (map[string]interface{}, error) {
+	return r.get(ctx, fmt.Sprintf("/v1/reflect/preferences/%s", agentID))
+}
+
+// GetContradictions returns contradictions for an agent. GET /v1/reflect/contradictions/:agent_id
+func (r *ReflectClient) GetContradictions(ctx context.Context, agentID string) (map[string]interface{}, error) {
+	return r.get(ctx, fmt.Sprintf("/v1/reflect/contradictions/%s", agentID))
+}
+
+// ResolveContradiction resolves a contradiction. POST /v1/reflect/contradictions/:agent_id/:contradiction_id/resolve
+func (r *ReflectClient) ResolveContradiction(ctx context.Context, agentID, contradictionID, strategy, mergedValueJSON string) (map[string]interface{}, error) {
+	return r.post(ctx, fmt.Sprintf("/v1/reflect/contradictions/%s/%s/resolve", agentID, contradictionID), map[string]interface{}{
+		"strategy":          strategy,
+		"merged_value_json": mergedValueJSON,
+	})
 }

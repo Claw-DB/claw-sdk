@@ -46,7 +46,7 @@ export function withClawDBMemory(runner: Agent, client: ClawDB): Agent {
           return undefined;
         }
         return async (input: string, ...rest: unknown[]) => {
-          const contextHits = await client.memory.search(input, { topK: 5, semantic: true });
+          const contextHits = await client.search(input, { topK: 5, semantic: true });
           const memoryContext = contextHits.length > 0
             ? `Relevant long-term memory:\n${contextHits.map((h, i) => `${i + 1}. ${h.content}`).join('\n')}`
             : '';
@@ -57,8 +57,8 @@ export function withClawDBMemory(runner: Agent, client: ClawDB): Agent {
           try {
             const output = await original.call(target, input, ...rest);
             const assistantText = typeof output === 'string' ? output : JSON.stringify(output);
-            await client.memory.remember(input, { memoryType: 'message', tags: ['role:user'] });
-            await client.memory.remember(assistantText, { memoryType: 'message', tags: ['role:assistant'] });
+            await client.rememberTyped(input, { type: 'message', tags: ['role:user'] });
+            await client.rememberTyped(assistantText, { type: 'message', tags: ['role:assistant'] });
             return output;
           } finally {
             target.instructions = previousInstructions;

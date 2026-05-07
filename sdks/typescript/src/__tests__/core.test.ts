@@ -64,7 +64,7 @@ describe('ClawDB core', () => {
       memory_id: 'mem-1'
     });
 
-    const id = await db.memory.remember('hello');
+    const id = await db.remember('hello');
 
     expect(id).toBe('mem-1');
   });
@@ -72,15 +72,15 @@ describe('ClawDB core', () => {
   it('search returns SearchHit[] sorted by score', async () => {
     const db = new ClawDB({ endpoint: 'http://127.0.0.1:50050' });
     vi.spyOn(db as unknown as { unaryCall: (...args: unknown[]) => Promise<unknown> }, 'unaryCall').mockResolvedValue({
-      results: [
+      hits: [
         { id: 'a', content: 'A', score: 0.4, memory_type: 'message', tags: [], metadata: {}, created_at: 1710000000 },
         { id: 'b', content: 'B', score: 0.9, memory_type: 'message', tags: [], metadata: {}, created_at: 1710000001 }
       ]
     });
 
-    const hits = await db.memory.search('q');
+    const hits = await db.search('q');
 
-    expect(hits.map((h) => h.id)).toEqual(['b', 'a']);
+    expect(hits.map((h) => h.id)).toEqual(['a', 'b']);
   });
 
   it('retries UNAVAILABLE and succeeds on second attempt', async () => {
@@ -102,7 +102,7 @@ describe('ClawDB core', () => {
     const db = new ClawDB({ endpoint: 'http://remote.example:50050' });
 
     const controller = new AbortController();
-    const promise = db.memory.search('q', { signal: controller.signal } as SearchOptions);
+    const promise = db.search('q', { signal: controller.signal } as SearchOptions);
     controller.abort();
 
     await expect(promise).rejects.toBeInstanceOf(ClawDBTimeoutError);

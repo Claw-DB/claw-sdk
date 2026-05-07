@@ -1,80 +1,26 @@
 package clawdb
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"net/http"
+	"fmt"
 )
 
 // MemoryClient provides memory operations.
 type MemoryClient struct {
-	cfg     *Config
-	session *Session
-	http    *http.Client
+	*httpClient
 }
 
 func newMemoryClient(cfg *Config, session *Session) *MemoryClient {
-	return &MemoryClient{
-		cfg:     cfg,
-		session: session,
-		http:    &http.Client{Timeout: cfg.Timeout},
-	}
+	return &MemoryClient{newHTTPClient(cfg, session)}
 }
 
-func (m *MemoryClient) doPost(ctx context.Context, path string, payload interface{}) (map[string]interface{}, error) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, &ClawDBError{Code: ErrorCodeInternal, Message: err.Error()}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.cfg.Endpoint+path, bytes.NewReader(body))
-	if err != nil {
-		return nil, &ClawDBError{Code: ErrorCodeInternal, Message: err.Error()}
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if m.session != nil && m.session.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+m.session.Token)
-	} else if m.cfg.APIKey != "" {
-		req.Header.Set("X-Api-Key", m.cfg.APIKey)
-	}
-	resp, err := m.http.Do(req)
-	if err != nil {
-		return nil, &ClawDBError{Code: ErrorCodeUnavailable, Message: err.Error()}
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return nil, FromHTTPResponse(resp.StatusCode, string(b))
-	}
-	var out map[string]interface{}
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil, &ClawDBError{Code: ErrorCodeInternal, Message: err.Error()}
-	}
-	return out, nil
-}
-
-// Remember stores a new memory.
+// Remember stores a new memory. POST /v1/memories
 func (m *MemoryClient) Remember(ctx context.Context, content string, opts *RememberOptions) (string, error) {
 	if content == "" {
 		return "", &ClawDBError{Code: ErrorCodeValidation, Message: "content must be non-empty"}
 	}
-	payload := map[string]interface{}{
-		"content":  content,
-		"agent_id": m.cfg.AgentID,
-	}
-	if opts != nil {
-		if opts.MemoryType != "" {
-			payload["memory_type"] = string(opts.MemoryType)
-		}
-		if opts.Tags != nil {
-			payload["tags"] = opts.Tags
-		}
-		if opts.TTLDays > 0 {
-			payload["ttl_days"] = opts.TTLDays
-		}
-	}
-	out, err := m.doPost(ctx, "/v1/memory/remember", payload)
+	out, err := m.post(ctx, "/v1/memories", map[string]interface{}{"content": content})
 	if err != nil {
 		return "", err
 	}
@@ -82,61 +28,103 @@ func (m *MemoryClient) Remember(ctx context.Context, content string, opts *Remem
 	return id, nil
 }
 
-// Search searches memories semantically.
+// RememberTyped stores a typed memory. POST /v1/memories
+func (m *MemoryClient) RememberTyped(ctx context.Context, content string, opts *RememberOptions) (string, error) {
+	if content == "" {
+		return "", &ClawDBError{Code: ErrorCodeValidation, Message: "content must be non-empty"}
+	}
+	payload := map[string]interface{}{"content": content}
+	if opts != nil {
+		if opts.MemoryType != "" {
+			payload["type"] = string(opts.MemoryType)
+		}
+		if opts.Tags != nil {
+			payload["tags"] = opts.Tags
+		}
+		if opts.Metadata != nil {
+			raw, _ := json.Marshal(opts.Metadata)
+			payload["metadata_json"] = string(raw)
+		}
+	}
+	out, err := m.post(ctx, "/v1/memories", payload)
+	if err != nil {
+		return "", err
+	}
+	id, _ := out["memory_id"].(string)
+	return id, nil
+}
+
+// Update updates an existing memory. PATCH /v1/memories/:id
+func (m *MemoryClient) Update(ctx context.Context, memoryID, content string) (bool, error) {
+	out, err := m.patch(ctx, fmt.Sprintf("/v1/memories/%s", memoryID), map[string]interface{}{"content": content})
+	if err != nil {
+		return false, err
+	}
+	updated, _ := out["updated"].(bool)
+	return updated, nil
+}
+
+// Search searches memories semantically. GET /v1/memories/search
 func (m *MemoryClient) Search(ctx context.Context, query string, opts *SearchOptions) ([]SearchHit, error) {
 	topK := 5
-	alpha := 0.7
-	semantic := true
-	if opts != nil {
-		if opts.TopK > 0 {
-			topK = opts.TopK
-		}
-		if opts.Alpha > 0 {
-			alpha = opts.Alpha
-		}
-		semantic = opts.Semantic
+	if opts != nil && opts.TopK > 0 {
+		topK = opts.TopK
 	}
-	if topK > 100 {
-		return nil, &ClawDBError{Code: ErrorCodeValidation, Message: "top_k cannot exceed 100"}
+	path := fmt.Sprintf("/v1/memories/search?query=%s&top_k=%d", query, topK)
+	if opts != nil && opts.Semantic {
+		path += "&semantic=true"
 	}
-	out, err := m.doPost(ctx, "/v1/memory/search", map[string]interface{}{
-		"query": query, "top_k": topK, "semantic": semantic, "alpha": alpha,
-	})
+	out, err := m.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	raw, _ := json.Marshal(out["results"])
+	raw, _ := json.Marshal(out["hits"])
 	var results []SearchHit
 	_ = json.Unmarshal(raw, &results)
 	return results, nil
 }
 
-// Recall retrieves specific memories by ID.
-func (m *MemoryClient) Recall(ctx context.Context, memoryIDs []string) ([]SearchHit, error) {
+// Get retrieves a single memory. GET /v1/memories/:id
+func (m *MemoryClient) Get(ctx context.Context, memoryID string) (*MemoryRecord, error) {
+	out, err := m.get(ctx, fmt.Sprintf("/v1/memories/%s", memoryID))
+	if err != nil {
+		return nil, err
+	}
+	raw, _ := json.Marshal(out)
+	var rec MemoryRecord
+	_ = json.Unmarshal(raw, &rec)
+	return &rec, nil
+}
+
+// Recall retrieves specific memories by ID. POST /v1/memories (multi-get via recall)
+func (m *MemoryClient) Recall(ctx context.Context, memoryIDs []string) ([]MemoryRecord, error) {
 	if len(memoryIDs) == 0 {
 		return nil, &ClawDBError{Code: ErrorCodeValidation, Message: "memory_ids must be non-empty"}
 	}
-	out, err := m.doPost(ctx, "/v1/memory/recall", map[string]interface{}{"memory_ids": memoryIDs})
+	// Use list with IDs filter — server must support memory_ids param
+	out, err := m.post(ctx, "/v1/memories/recall", map[string]interface{}{"memory_ids": memoryIDs})
 	if err != nil {
 		return nil, err
 	}
 	raw, _ := json.Marshal(out["memories"])
-	var memories []SearchHit
+	var memories []MemoryRecord
 	_ = json.Unmarshal(raw, &memories)
 	return memories, nil
 }
 
-// Forget soft-deletes a memory.
+// Forget soft-deletes a memory. DELETE /v1/memories/:id
 func (m *MemoryClient) Forget(ctx context.Context, memoryID string) error {
-	_, err := m.doPost(ctx, "/v1/memory/forget", map[string]interface{}{"memory_id": memoryID})
+	_, err := m.delete(ctx, fmt.Sprintf("/v1/memories/%s", memoryID))
 	return err
 }
 
-// List lists memories with optional filters.
+// List lists memories. GET /v1/memories
 func (m *MemoryClient) List(ctx context.Context, memoryType string, limit, offset int) ([]MemoryRecord, error) {
-	out, err := m.doPost(ctx, "/v1/memory/list", map[string]interface{}{
-		"memory_type": memoryType, "limit": limit, "offset": offset,
-	})
+	path := fmt.Sprintf("/v1/memories?limit=%d&offset=%d", limit, offset)
+	if memoryType != "" {
+		path += "&type=" + memoryType
+	}
+	out, err := m.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}

@@ -19,7 +19,8 @@ from clawdb.errors import (
     ClawDBUnavailableError,
     ClawDBValidationError,
 )
-from clawdb.models import BranchInfo, MemoryRecord, ReflectJob, SearchResult, SyncResult
+from clawdb.models import BranchInfo, DiffResult, MemoryRecord, MergeResult, ReflectJob, SearchResult, SyncActionResult, SyncResult, SyncStatusResult, TxInfo
+from clawdb.transactions import TxClient
 
 
 def clawdb() -> ClawDB | Awaitable[AsyncClawDB]:

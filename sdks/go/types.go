@@ -44,45 +44,67 @@ type SearchHit struct {
 
 // BranchInfo describes a memory branch.
 type BranchInfo struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Status          string    `json:"status"`
-	ParentID        string    `json:"parent_id,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	DivergenceScore float64   `json:"divergence_score"`
+	BranchID   string `json:"branch_id"`
+	Name       string `json:"name"`
+	BranchJSON string `json:"branch_json,omitempty"`
 }
 
-// SyncResult reports the outcome of a sync operation.
+// BranchResponse is the result of a Branch (fork) call.
+type BranchResponse struct {
+	BranchID  string `json:"branch_id"`
+	Name      string `json:"name"`
+	RequestID string `json:"request_id"`
+}
+
+// SyncResult reports the outcome of a full sync operation.
 type SyncResult struct {
-	Pushed    int       `json:"pushed"`
-	Pulled    int       `json:"pulled"`
-	Conflicts int       `json:"conflicts"`
-	SyncedAt  time.Time `json:"synced_at"`
+	Pushed     int    `json:"pushed"`
+	Pulled     int    `json:"pulled"`
+	Conflicts  int    `json:"conflicts"`
+	DurationMs int    `json:"duration_ms"`
+	RequestID  string `json:"request_id"`
+}
+
+// SyncActionResult reports the outcome of a push/pull/reconcile.
+type SyncActionResult struct {
+	SummaryJSON string `json:"summary_json"`
+	RequestID   string `json:"request_id"`
+}
+
+// SyncStatusResult holds sync status JSON.
+type SyncStatusResult struct {
+	StatusJSON string `json:"status_json"`
+	RequestID  string `json:"request_id"`
 }
 
 // DiffResult describes differences between two branches.
 type DiffResult struct {
-	Added           int                      `json:"added"`
-	Removed         int                      `json:"removed"`
-	Modified        int                      `json:"modified"`
-	DivergenceScore float64                  `json:"divergence_score"`
-	EntityDiffs     []map[string]interface{} `json:"entity_diffs,omitempty"`
+	Added           int     `json:"added"`
+	Removed         int     `json:"removed"`
+	Modified        int     `json:"modified"`
+	Unchanged       int     `json:"unchanged"`
+	DivergenceScore float64 `json:"divergence_score"`
+	DiffJSON        string  `json:"diff_json,omitempty"`
+	RequestID       string  `json:"request_id"`
 }
 
 // MergeResult reports the outcome of a merge.
 type MergeResult struct {
-	Applied   int                      `json:"applied"`
-	Conflicts []map[string]interface{} `json:"conflicts,omitempty"`
-	Success   bool                     `json:"success"`
+	Success    bool   `json:"success"`
+	Applied    int    `json:"applied"`
+	Skipped    int    `json:"skipped"`
+	Conflicts  int    `json:"conflicts"`
+	DurationMs int    `json:"duration_ms"`
+	RequestID  string `json:"request_id"`
 }
 
 // ReflectJob describes an async reflection job.
 type ReflectJob struct {
 	JobID     string `json:"job_id"`
 	Status    string `json:"status"`
-	Processed int    `json:"processed"`
-	Archived  int    `json:"archived"`
-	Promoted  int    `json:"promoted"`
+	Message   string `json:"message"`
+	Skipped   bool   `json:"skipped"`
+	RequestID string `json:"request_id"`
 }
 
 // AgentProfile holds the learned profile for an agent.

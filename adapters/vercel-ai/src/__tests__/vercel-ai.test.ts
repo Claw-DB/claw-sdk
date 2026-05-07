@@ -5,21 +5,19 @@ import { clawdbMiddleware } from '../middleware/index.js';
 
 function makeMockDb() {
   return {
-    memory: {
-      remember: vi.fn().mockResolvedValue('m-1'),
-      search: vi.fn().mockResolvedValue([
-        {
-          id: 'm-1',
-          content: 'stored info',
-          score: 0.9,
-          memoryType: 'message',
-          tags: ['a'],
-          metadata: {},
-          createdAt: new Date()
-        }
-      ]),
-      recall: vi.fn().mockResolvedValue([{ id: 'm-1' }])
-    }
+    rememberTyped: vi.fn().mockResolvedValue('m-1'),
+    search: vi.fn().mockResolvedValue([
+      {
+        id: 'm-1',
+        content: 'stored info',
+        score: 0.9,
+        memoryType: 'message',
+        tags: ['a'],
+        metadata: {},
+        createdAt: new Date()
+      }
+    ]),
+    recall: vi.fn().mockResolvedValue([{ id: 'm-1' }])
   } as unknown as import('@clawdb/sdk').ClawDB;
 }
 
@@ -51,6 +49,6 @@ describe('vercel ai adapter', () => {
     });
 
     expect((result as { text: string }).text).toBe('assistant says hi');
-    expect(db.memory.remember).toHaveBeenCalledTimes(2);
+    expect(db.rememberTyped).toHaveBeenCalledTimes(2);
   });
 });

@@ -71,7 +71,7 @@ class ClawDBMemoryTool:
             return json.dumps({"memory_id": memory_id})
         if function_name == "clawdb_search":
             results = await self._db.memory.search(**args)
-            return json.dumps([{"content": r.memory.content, "score": r.score, "id": r.memory.id} for r in results])
+            return json.dumps([{"content": r.content, "score": r.score, "id": r.id} for r in results])
         if function_name == "clawdb_recall":
             memories = await self._db.memory.recall(args["memory_ids"])
             return json.dumps([{"id": m.id, "content": m.content} for m in memories])

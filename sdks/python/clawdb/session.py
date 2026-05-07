@@ -60,6 +60,26 @@ class SessionClient:
 
         return with_retry(_call)
 
+    def revoke_by_id(self, session_id: str) -> bool:
+        def _call() -> bool:
+            try:
+                resp = self._stub.RevokeSession({"session_id": session_id}, metadata=make_metadata(self.token, self._api_key))
+                return bool(getattr(resp, "revoked", False) or (isinstance(resp, dict) and resp.get("revoked")))
+            except Exception as exc:
+                raise ClawDBError.from_grpc_error(exc) from exc
+
+        return with_retry(_call)
+
+    def active_count(self) -> int:
+        def _call() -> int:
+            try:
+                resp = self._stub.ActiveSessionCount({}, metadata=make_metadata(self.token, self._api_key))
+                return int(getattr(resp, "count", 0) or (isinstance(resp, dict) and resp.get("count", 0)))
+            except Exception as exc:
+                raise ClawDBError.from_grpc_error(exc) from exc
+
+        return with_retry(_call)
+
     def revoke(self) -> None:
         if not self.token:
             return

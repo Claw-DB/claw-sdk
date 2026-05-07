@@ -33,17 +33,16 @@ export class ClawDBChatMessageHistory extends BaseChatMessageHistory {
 
   /** Returns all messages for this session in chronological order. */
   async getMessages(): Promise<BaseMessage[]> {
-    const page = await this.client.memory.list({
+    const page = await this.client.listMemories({
       type: MSG_MEMORY_TYPE,
       limit: this.maxMessages,
     });
 
     const sessionTag = `${SESSION_TAG_PREFIX}${this.sessionId}`;
-    return page.hits
+    return page
       .filter(m => m.tags.includes(sessionTag))
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .map(m => {
-        const role = (m.metadata?.['role'] as string) ?? 'human';
+        const role = m.tags.includes('ai') ? 'ai' : 'human';
         return role === 'ai' ? new AIMessage(m.content) : new HumanMessage(m.content);
       });
   }
@@ -55,10 +54,9 @@ export class ClawDBChatMessageHistory extends BaseChatMessageHistory {
       ? message.content
       : JSON.stringify(message.content);
 
-    await this.client.memory.remember(content, {
-      memoryType: MSG_MEMORY_TYPE,
+    await this.client.rememberTyped(content, {
+      type: MSG_MEMORY_TYPE,
       tags: [`${SESSION_TAG_PREFIX}${this.sessionId}`, role],
-      metadata: { role, sessionId: this.sessionId },
     });
   }
 
@@ -74,15 +72,15 @@ export class ClawDBChatMessageHistory extends BaseChatMessageHistory {
 
   /** Deletes all messages for this session. */
   async clear(): Promise<void> {
-    const memories = await this.client.memory.list({
+    const memories = await this.client.listMemories({
       type: MSG_MEMORY_TYPE,
       limit: 10_000,
     });
     const sessionTag = `${SESSION_TAG_PREFIX}${this.sessionId}`;
     await Promise.all(
-      memories.hits
+      memories
         .filter(m => m.tags.includes(sessionTag))
-        .map(m => this.client.memory.delete(m.id))
+        .map(m => this.client.deleteMemory(m.id))
     );
   }
 }

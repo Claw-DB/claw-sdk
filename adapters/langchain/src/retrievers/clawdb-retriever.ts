@@ -41,7 +41,7 @@ export class ClawDBRetriever extends BaseRetriever {
     query: string,
     _runManager?: CallbackManagerForRetrieverRun
   ): Promise<Document[]> {
-    const results: SearchHit[] = await this.client.memory.search(query, {
+    const results: SearchHit[] = await this.client.search(query, {
       topK: this.topK,
       semantic: this.semantic,
       filter: this.filter,

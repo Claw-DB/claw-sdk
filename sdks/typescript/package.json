@@ -1,6 +1,6 @@
 {
   "name": "@clawdb/sdk",
-  "version": "0.1.5",
+  "version": "0.1.11",
   "description": "Zero-config database for AI agents.",
   "license": "MIT",
   "repository": {
@@ -50,9 +50,9 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.10.0",
     "@grpc/proto-loader": "^0.7.0",
-    "@clawdb/errors": "^0.1.0",
-    "@clawdb/proto": "^0.1.0",
-    "@clawdb/types": "^0.1.0",
+    "@clawdb/errors": "workspace:*",
+    "@clawdb/proto": "workspace:*",
+    "@clawdb/types": "workspace:*",
     "nice-grpc": "^2.1.0",
     "nice-grpc-web": "^3.0.0",
     "zod": "^3.23.8"

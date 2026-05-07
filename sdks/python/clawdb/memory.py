@@ -100,14 +100,60 @@ class MemoryClient:
 
         return with_retry(_call)
 
-    def forget(self, memory_id: str) -> None:
-        def _call() -> None:
+    def remember_typed(
+        self,
+        content: str,
+        *,
+        type: str = "context",
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        if not content or not content.strip():
+            raise ClawDBValidationError("content must be a non-empty string", field="content", constraint="non-empty")
+
+        def _call() -> str:
             try:
-                self._stub.Forget(_build_request("Forget", memory_id=memory_id), metadata=self._meta())
+                resp = self._stub.RememberTyped(
+                    _build_request(
+                        "RememberTyped",
+                        content=content,
+                        type=type,
+                        tags=tags or [],
+                        metadata_json=json.dumps(metadata or {}),
+                    ),
+                    metadata=self._meta(),
+                )
+                return resp.memory_id
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
-        with_retry(_call)
+        return with_retry(_call)
+
+    def update(self, memory_id: str, content: str) -> bool:
+        def _call() -> bool:
+            try:
+                resp = self._stub.UpdateMemory(
+                    _build_request("UpdateMemory", memory_id=memory_id, content=content),
+                    metadata=self._meta(),
+                )
+                return bool(resp.updated)
+            except Exception as exc:
+                raise ClawDBError.from_grpc_error(exc) from exc
+
+        return with_retry(_call)
+
+    def delete(self, memory_id: str) -> bool:
+        def _call() -> bool:
+            try:
+                resp = self._stub.DeleteMemory(
+                    _build_request("DeleteMemory", memory_id=memory_id),
+                    metadata=self._meta(),
+                )
+                return bool(resp.deleted)
+            except Exception as exc:
+                raise ClawDBError.from_grpc_error(exc) from exc
+
+        return with_retry(_call)
 
     def list(
         self,
@@ -149,11 +195,11 @@ class BranchClient:
     def _meta(self) -> list[tuple[str, str]]:
         return make_metadata(self._session.token, self._api_key)
 
-    def fork(self, name: str, *, parent: str | None = None, description: str | None = None) -> BranchInfo:
+    def fork(self, name: str, *, from_branch: str = "") -> BranchInfo:
         def _call() -> BranchInfo:
             try:
-                resp = self._stub.Fork(_build_request("Fork", name=name, parent=parent or "trunk", description=description or ""), metadata=self._meta())
-                return BranchInfo.model_validate(_proto_to_dict(resp.branch))
+                resp = self._stub.Branch(_build_request("Branch", name=name, from_=from_branch), metadata=self._meta())
+                return BranchInfo(branch_id=resp.branch_id, name=resp.name)
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
@@ -162,60 +208,85 @@ class BranchClient:
     def list(self, *, status: str | None = None) -> list[BranchInfo]:
         def _call() -> list[BranchInfo]:
             try:
-                resp = self._stub.ListBranches(_build_request("ListBranches", status=status or ""), metadata=self._meta())
+                resp = self._stub.ListBranches(_build_request("ListBranches"), metadata=self._meta())
                 return [BranchInfo.model_validate(b) for b in _repeated_to_dicts(resp.branches)]
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
         return with_retry(_call)
 
-    def get(self, name_or_id: str) -> BranchInfo:
+    def get(self, branch_id: str) -> BranchInfo:
         def _call() -> BranchInfo:
             try:
-                resp = self._stub.GetBranch(_build_request("GetBranch", name_or_id=name_or_id), metadata=self._meta())
+                resp = self._stub.GetBranch(_build_request("GetBranch", branch_id=branch_id), metadata=self._meta())
                 return BranchInfo.model_validate(_proto_to_dict(resp.branch))
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
         return with_retry(_call)
 
-    def diff(self, branch_a: str, branch_b: str) -> DiffResult:
+    def get_by_name(self, name: str) -> BranchInfo:
+        def _call() -> BranchInfo:
+            try:
+                resp = self._stub.GetBranchByName(_build_request("GetBranchByName", name=name), metadata=self._meta())
+                return BranchInfo.model_validate(_proto_to_dict(resp.branch))
+            except Exception as exc:
+                raise ClawDBError.from_grpc_error(exc) from exc
+
+        return with_retry(_call)
+
+    def get_trunk(self) -> BranchInfo:
+        def _call() -> BranchInfo:
+            try:
+                resp = self._stub.GetTrunkBranch(_build_request("GetTrunkBranch"), metadata=self._meta())
+                return BranchInfo.model_validate(_proto_to_dict(resp.branch))
+            except Exception as exc:
+                raise ClawDBError.from_grpc_error(exc) from exc
+
+        return with_retry(_call)
+
+    def diff(self, branch_id: str, target: str = "") -> DiffResult:
         def _call() -> DiffResult:
             try:
-                resp = self._stub.DiffBranches(_build_request("Diff", branch_a=branch_a, branch_b=branch_b), metadata=self._meta())
+                resp = self._stub.Diff(_build_request("Diff", branch_id=branch_id, target=target), metadata=self._meta())
                 return DiffResult.model_validate(_proto_to_dict(resp))
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
         return with_retry(_call)
 
-    def merge(self, source: str, *, into: str = "trunk", strategy: str = "union") -> MergeResult:
+    def merge(self, source: str, *, target: str = "", strategy: str = "") -> MergeResult:
         def _call() -> MergeResult:
             try:
-                resp = self._stub.Merge(_build_request("Merge", source=source, into=into, strategy=strategy), metadata=self._meta())
+                resp = self._stub.Merge(_build_request("Merge", source=source, target=target, strategy=strategy), metadata=self._meta())
                 return MergeResult.model_validate(_proto_to_dict(resp))
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
         return with_retry(_call)
 
-    def discard(self, name: str) -> None:
-        def _call() -> None:
+    def discard(self, branch_id: str) -> bool:
+        def _call() -> bool:
             try:
-                self._stub.DiscardBranch(_build_request("Discard", name=name), metadata=self._meta())
+                resp = self._stub.DiscardBranch(_build_request("DiscardBranch", branch_id=branch_id), metadata=self._meta())
+                return bool(resp.discarded)
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
-        with_retry(_call)
+        return with_retry(_call)
 
-    def archive(self, name: str) -> None:
-        def _call() -> None:
+    def archive(self, branch_id: str) -> bool:
+        def _call() -> bool:
             try:
-                self._stub.ArchiveBranch(_build_request("Archive", name=name), metadata=self._meta())
+                resp = self._stub.ArchiveBranch(_build_request("ArchiveBranch", branch_id=branch_id), metadata=self._meta())
+                return bool(resp.archived)
             except Exception as exc:
                 raise ClawDBError.from_grpc_error(exc) from exc
 
-        with_retry(_call)
+        return with_retry(_call)
+
+
+
 
 
 # ---------------------------------------------------------------------------

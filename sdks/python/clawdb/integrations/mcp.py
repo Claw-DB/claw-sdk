@@ -39,7 +39,7 @@ def create_mcp_server(db: AsyncClawDB) -> Any:
             return [mcp_types.TextContent(type="text", text=json.dumps({"memory_id": memory_id}))]
         if name == "clawdb_search":
             results = await db.memory.search(**arguments)
-            return [mcp_types.TextContent(type="text", text=json.dumps([{"content": r.memory.content, "score": r.score} for r in results]))]
+            return [mcp_types.TextContent(type="text", text=json.dumps([{"content": r.content, "score": r.score} for r in results]))]
         if name == "clawdb_recall":
             memories = await db.memory.recall(arguments["memory_ids"])
             return [mcp_types.TextContent(type="text", text=json.dumps([{"id": m.id, "content": m.content} for m in memories]))]

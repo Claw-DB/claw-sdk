@@ -6,25 +6,21 @@ import { withClawDBMemory } from '../middleware/index.js';
 
 function makeMockDb() {
   return {
-    memory: {
-      remember: vi.fn().mockResolvedValue('mem-id-1'),
-      search: vi.fn().mockResolvedValue([
-        {
-          id: 'mem-id-1',
-          content: 'project preference',
-          score: 0.9,
-          memoryType: 'message',
-          tags: [],
-          metadata: {},
-          createdAt: new Date()
-        }
-      ]),
-      recall: vi.fn().mockResolvedValue([])
-    },
-    branches: {
-      fork: vi.fn().mockResolvedValue({ id: 'br-1', name: 'branch' }),
-      merge: vi.fn().mockResolvedValue({ success: true, applied: 1, conflicts: [] })
-    }
+    rememberTyped: vi.fn().mockResolvedValue('mem-id-1'),
+    search: vi.fn().mockResolvedValue([
+      {
+        id: 'mem-id-1',
+        content: 'project preference',
+        score: 0.9,
+        memoryType: 'message',
+        tags: [],
+        metadata: {},
+        createdAt: new Date()
+      }
+    ]),
+    recall: vi.fn().mockResolvedValue([]),
+    branch: vi.fn().mockResolvedValue({ branchId: 'br-1', name: 'branch' }),
+    merge: vi.fn().mockResolvedValue({ success: true, applied: 1, conflicts: 0 })
   } as unknown as import('@clawdb/sdk').ClawDB;
 }
 
@@ -58,7 +54,7 @@ describe('openai adapter', () => {
     const result = await wrapped.run?.('user message');
 
     expect(result).toBe('assistant answer');
-    expect(db.memory.search).toHaveBeenCalled();
-    expect(db.memory.remember).toHaveBeenCalledTimes(2);
+    expect(db.search).toHaveBeenCalled();
+    expect(db.rememberTyped).toHaveBeenCalledTimes(2);
   });
 });

@@ -18,7 +18,7 @@ from clawdb._transport import create_async_channel, make_metadata
 from clawdb.branches import BranchClient
 from clawdb.config import ClawDBConfig
 from clawdb.errors import ClawDBError, ClawDBRateLimitError, ClawDBUnavailableError, ClawDBValidationError
-from clawdb.models import BranchInfo, DiffResult, MemoryRecord, MergeResult, ReflectJob, SearchResult, SyncResult
+from clawdb.models import BranchInfo, DiffResult, MemoryRecord, MergeResult, ReflectJob, SearchResult, SyncResult, TxInfo
 from clawdb.provision import resolve_endpoint
 
 log = structlog.get_logger(__name__)
@@ -198,14 +198,28 @@ class AsyncSyncClient:
 
     async def push(self) -> SyncResult:
         async def _call() -> SyncResult:
-            resp = await self._stub.SyncPush({}, metadata=self._meta())
+            resp = await self._stub.PushSync({}, metadata=self._meta())
             return SyncResult.model_validate(_to_dict(resp))
 
         return await _with_async_retry(_call)
 
     async def pull(self) -> SyncResult:
         async def _call() -> SyncResult:
-            resp = await self._stub.SyncPull({}, metadata=self._meta())
+            resp = await self._stub.PullSync({}, metadata=self._meta())
+            return SyncResult.model_validate(_to_dict(resp))
+
+        return await _with_async_retry(_call)
+
+    async def reconcile(self) -> SyncResult:
+        async def _call() -> SyncResult:
+            resp = await self._stub.ReconcileSync({}, metadata=self._meta())
+            return SyncResult.model_validate(_to_dict(resp))
+
+        return await _with_async_retry(_call)
+
+    async def status(self) -> SyncResult:
+        async def _call() -> SyncResult:
+            resp = await self._stub.SyncStatus({}, metadata=self._meta())
             return SyncResult.model_validate(_to_dict(resp))
 
         return await _with_async_retry(_call)
@@ -224,18 +238,73 @@ class AsyncReflectClient:
     def _meta(self) -> list[tuple[str, str]]:
         return make_metadata(getattr(self._session, "token", None), self._api_key)
 
-    async def trigger(self, *, job_type: str = "full", dry_run: bool = False) -> ReflectJob:
+    async def trigger(self) -> ReflectJob:
         async def _call() -> ReflectJob:
-            resp = await self._stub.TriggerReflect({"job_type": job_type, "dry_run": dry_run}, metadata=self._meta())
+            resp = await self._stub.Reflect({}, metadata=self._meta())
             return ReflectJob.model_validate(_to_dict(resp))
 
         return await _with_async_retry(_call)
 
-    async def status(self, job_id: str) -> ReflectJob:
+    async def get_job(self, job_id: str) -> ReflectJob:
         async def _call() -> ReflectJob:
-            resp = await self._stub.ReflectStatus({"job_id": job_id}, metadata=self._meta())
+            resp = await self._stub.ReflectGetJob({"job_id": job_id}, metadata=self._meta())
             return ReflectJob.model_validate(_to_dict(resp))
 
+        return await _with_async_retry(_call)
+
+    async def get_facts(self, agent_id: str) -> dict:
+        async def _call() -> dict:
+            resp = await self._stub.ReflectGetFacts({"agent_id": agent_id}, metadata=self._meta())
+            return _to_dict(resp)
+
+        return await _with_async_retry(_call)
+
+    async def get_preferences(self, agent_id: str) -> dict:
+        async def _call() -> dict:
+            resp = await self._stub.ReflectGetPreferences({"agent_id": agent_id}, metadata=self._meta())
+            return _to_dict(resp)
+
+        return await _with_async_retry(_call)
+
+    async def get_contradictions(self, agent_id: str) -> dict:
+        async def _call() -> dict:
+            resp = await self._stub.ReflectGetContradictions({"agent_id": agent_id}, metadata=self._meta())
+            return _to_dict(resp)
+
+        return await _with_async_retry(_call)
+
+
+class AsyncTxClient:
+    def __init__(self, stub: Any, session: Any, api_key: str = "") -> None:
+        self._stub = stub
+        self._session = session
+        self._api_key = api_key
+
+    def _meta(self) -> list[tuple[str, str]]:
+        return make_metadata(getattr(self._session, "token", None), self._api_key)
+
+    async def begin(self) -> TxInfo:
+        async def _call() -> TxInfo:
+            resp = await self._stub.BeginTx({}, metadata=self._meta())
+            return TxInfo.model_validate(_to_dict(resp))
+        return await _with_async_retry(_call)
+
+    async def remember(self, tx_id: str, content: str) -> str:
+        async def _call() -> str:
+            resp = await self._stub.TxRemember({"tx_id": tx_id, "content": content}, metadata=self._meta())
+            return _to_dict(resp).get("memory_id", "")
+        return await _with_async_retry(_call)
+
+    async def commit(self, tx_id: str) -> bool:
+        async def _call() -> bool:
+            resp = await self._stub.CommitTx({"tx_id": tx_id}, metadata=self._meta())
+            return bool(_to_dict(resp).get("committed"))
+        return await _with_async_retry(_call)
+
+    async def rollback(self, tx_id: str) -> bool:
+        async def _call() -> bool:
+            resp = await self._stub.RollbackTx({"tx_id": tx_id}, metadata=self._meta())
+            return bool(_to_dict(resp).get("rolled_back"))
         return await _with_async_retry(_call)
 
 
@@ -259,6 +328,7 @@ class AsyncClawDB:
         self._branch_client: AsyncBranchClient | None = None
         self._sync_client: AsyncSyncClient | None = None
         self._reflect_client: AsyncReflectClient | None = None
+        self._tx_client: AsyncTxClient | None = None
 
     @classmethod
     def from_env(cls) -> "AsyncClawDB":
@@ -328,3 +398,9 @@ class AsyncClawDB:
         if self._reflect_client is None:
             self._reflect_client = AsyncReflectClient(self._stub, self._session, self._config.api_key)
         return self._reflect_client
+
+    @property
+    def tx(self) -> AsyncTxClient:
+        if self._tx_client is None:
+            self._tx_client = AsyncTxClient(self._stub, self._session, self._config.api_key)
+        return self._tx_client

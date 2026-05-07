@@ -124,7 +124,7 @@ async function main(): Promise<void> {
       tags: z.array(z.string()).optional()
     },
     async ({ content, memory_type, tags }) => {
-      const id = await requireDb().memory.remember(content, { memoryType: memory_type, tags });
+      const id = await requireDb().rememberTyped(content, { type: memory_type, tags });
       return toMcpText({ id });
     }
   );
@@ -141,8 +141,8 @@ async function main(): Promise<void> {
     },
     async ({ memories }) => {
       const ids = await Promise.all(
-        memories.map((item) => requireDb().memory.remember(item.content, {
-          memoryType: item.memory_type ?? 'message',
+        memories.map((item) => requireDb().rememberTyped(item.content, {
+          type: item.memory_type ?? 'message',
           tags: item.tags
         }))
       );
@@ -159,8 +159,94 @@ async function main(): Promise<void> {
       semantic: z.boolean().default(true)
     },
     async ({ query, top_k, semantic }) => {
-      const results = await requireDb().memory.search(query, { topK: top_k, semantic });
+      const results = await requireDb().search(query, { topK: top_k, semantic });
       return { content: [{ type: 'text', text: formatHits(results) }] };
+  // ── Memory CRUD ───────────────────────────────────────────────────────
+  server.tool('clawdb_update_memory', 'Update an existing memory entry by ID.',
+    { id: z.string(), content: z.string() },
+    async ({ id, content }) => toMcpText({ updated: await requireDb().updateMemory(id, content) })
+  );
+  server.tool('clawdb_delete_memory', 'Delete a memory entry by ID.',
+    { id: z.string() },
+    async ({ id }) => toMcpText({ deleted: await requireDb().deleteMemory(id) })
+  );
+  server.tool('clawdb_list_memories', 'List recent memory entries.',
+    { limit: z.number().optional(), memory_type: z.string().optional() },
+    async ({ limit, memory_type }) => toMcpText({ memories: await requireDb().listMemories({ limit, type: memory_type }) })
+  );
+  // ── Branches ──────────────────────────────────────────────────────────
+  server.tool('clawdb_branch_list', 'List all memory branches.', {},
+    async () => toMcpText({ branches: await requireDb().listBranches() })
+  );
+  server.tool('clawdb_branch_get', 'Get a branch by ID.',
+    { branch_id: z.string() },
+    async ({ branch_id }) => toMcpText(await requireDb().getBranch(branch_id))
+  );
+  server.tool('clawdb_branch_trunk', 'Get the trunk (main) branch.', {},
+    async () => toMcpText(await requireDb().getTrunkBranch())
+  );
+  server.tool('clawdb_branch_diff', 'Diff two branches.',
+    { source_branch_id: z.string(), target_branch_id: z.string() },
+    async ({ source_branch_id, target_branch_id }) => toMcpText(await requireDb().diff(source_branch_id, target_branch_id))
+  );
+  server.tool('clawdb_branch_discard', 'Discard a branch permanently.',
+    { branch_id: z.string() },
+    async ({ branch_id }) => toMcpText({ discarded: await requireDb().discardBranch(branch_id) })
+  );
+  server.tool('clawdb_branch_archive', 'Archive a branch.',
+    { branch_id: z.string() },
+    async ({ branch_id }) => toMcpText({ archived: await requireDb().archiveBranch(branch_id) })
+  );
+  // ── Sync ──────────────────────────────────────────────────────────────
+  server.tool('clawdb_sync', 'Full bidirectional sync.', {}, async () => toMcpText(await requireDb().sync()));
+  server.tool('clawdb_sync_push', 'Push local changes.', {}, async () => toMcpText(await requireDb().pushSync()));
+  server.tool('clawdb_sync_pull', 'Pull remote changes.', {}, async () => toMcpText(await requireDb().pullSync()));
+  server.tool('clawdb_sync_reconcile', 'Reconcile divergent sync state.', {}, async () => toMcpText(await requireDb().reconcileSync()));
+  server.tool('clawdb_sync_status', 'Get sync status.', {}, async () => toMcpText(await requireDb().syncStatus()));
+  // ── Reflect ───────────────────────────────────────────────────────────
+  server.tool('clawdb_reflect', 'Trigger a reflection job.', {}, async () => toMcpText(await requireDb().reflect()));
+  server.tool('clawdb_reflect_list_jobs', 'List reflection jobs.',
+    { agent_id: z.string() },
+    async ({ agent_id }) => toMcpText(await requireDb().reflectListJobs(agent_id))
+  );
+  server.tool('clawdb_reflect_get_job', 'Get a reflection job by ID.',
+    { job_id: z.string() },
+    async ({ job_id }) => toMcpText(await requireDb().reflectGetJob(job_id))
+  );
+  server.tool('clawdb_reflect_facts', 'Get extracted facts.',
+    { agent_id: z.string() },
+    async ({ agent_id }) => toMcpText(await requireDb().reflectGetFacts(agent_id))
+  );
+  server.tool('clawdb_reflect_preferences', 'Get extracted preferences.',
+    { agent_id: z.string() },
+    async ({ agent_id }) => toMcpText(await requireDb().reflectGetPreferences(agent_id))
+  );
+  server.tool('clawdb_reflect_contradictions', 'Get contradictions.',
+    { agent_id: z.string() },
+    async ({ agent_id }) => toMcpText(await requireDb().reflectGetContradictions(agent_id))
+  );
+  server.tool('clawdb_reflect_resolve_contradiction', 'Resolve a contradiction.',
+    { agent_id: z.string(), contradiction_id: z.string(), strategy: z.enum(['keep-old', 'keep-new', 'merge']) },
+    async ({ agent_id, contradiction_id, strategy }) => toMcpText(await requireDb().reflectResolveContradiction(agent_id, contradiction_id, { strategy }))
+  );
+  // ── Transactions ──────────────────────────────────────────────────────
+  server.tool('clawdb_tx_begin', 'Begin a memory transaction.', {}, async () => toMcpText(await requireDb().beginTx()));
+  server.tool('clawdb_tx_remember', 'Add a memory to a transaction.',
+    { tx_id: z.string(), content: z.string(), memory_type: z.string().optional() },
+    async ({ tx_id, content, memory_type }) => toMcpText({ id: memory_type ? await requireDb().txRememberTyped(tx_id, content, { type: memory_type }) : await requireDb().txRemember(tx_id, content) })
+  );
+  server.tool('clawdb_tx_remember_typed', 'Add a typed memory to a transaction.',
+    { tx_id: z.string(), content: z.string(), memory_type: z.string(), tags: z.array(z.string()).optional() },
+    async ({ tx_id, content, memory_type, tags }) => toMcpText({ id: await requireDb().txRememberTyped(tx_id, content, { type: memory_type, tags }) })
+  );
+  server.tool('clawdb_tx_commit', 'Commit a transaction.',
+    { tx_id: z.string() },
+    async ({ tx_id }) => toMcpText({ committed: await requireDb().commitTx(tx_id) })
+  );
+  server.tool('clawdb_tx_rollback', 'Roll back a transaction.',
+    { tx_id: z.string() },
+    async ({ tx_id }) => toMcpText({ rolled_back: await requireDb().rollbackTx(tx_id) })
+  );
     }
   );
 
@@ -171,7 +257,7 @@ async function main(): Promise<void> {
       ids: z.array(z.string()).min(1)
     },
     async ({ ids }) => {
-      const memories = await requireDb().memory.recall(ids);
+      const memories = await requireDb().recall(ids);
       return toMcpText({ memories });
     }
   );
@@ -181,8 +267,8 @@ async function main(): Promise<void> {
     'Fork the agent\'s memory state for experimentation.',
     { name: z.string() },
     async ({ name }) => {
-      const branch = await requireDb().branch.fork(name);
-      return toMcpText({ branch_id: branch.id });
+      const branch = await requireDb().branch(name);
+      return toMcpText({ branch_id: branch.branchId });
     }
   );
 
@@ -194,7 +280,7 @@ async function main(): Promise<void> {
       strategy: z.enum(['last-write', 'source-wins']).default('last-write')
     },
     async ({ branch_id, strategy }) => {
-      const result = await requireDb().branch.merge(branch_id, strategy);
+      const result = await requireDb().merge(branch_id, '', strategy);
       return toMcpText(result);
     }
   );
@@ -204,19 +290,19 @@ async function main(): Promise<void> {
     'Check ClawDB connection and component health.',
     {},
     async () => {
-      const health = await requireDb().health.check();
+      const health = await requireDb().health();
       return toMcpText(health);
     }
   );
 
   server.resource('recent', 'clawdb://recent', async (uri) => {
-    const list = await requireDb().memory.list({ limit: 20 });
+    const list = await requireDb().listMemories({ limit: 20 });
     return {
       contents: [
         {
           uri: uri.href,
           mimeType: 'application/json',
-          text: JSON.stringify(list.hits, null, 2)
+          text: JSON.stringify(list, null, 2)
         }
       ]
     };
@@ -229,7 +315,7 @@ async function main(): Promise<void> {
         contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify({ error: 'missing id' }) }]
       };
     }
-    const [memory] = await requireDb().memory.recall([id]);
+    const [memory] = await requireDb().recall([id]);
     return {
       contents: [
         {
@@ -256,7 +342,7 @@ async function main(): Promise<void> {
       'Search memory for the current topic and format the result for system prompt injection.',
       { topic: z.string() },
       async ({ topic }) => {
-        const hits = await requireDb().memory.search(String(topic), { topK: 5, semantic: true });
+        const hits = await requireDb().search(String(topic), { topK: 5, semantic: true });
         return {
           messages: [
             {

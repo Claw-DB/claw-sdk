@@ -33,7 +33,7 @@ export function clawdbMiddleware(client: ClawDB): LanguageModelMiddleware {
         return params;
       }
 
-      const hits = await client.memory.search(userMessage, { topK: 5, semantic: true });
+      const hits = await client.search(userMessage, { topK: 5, semantic: true });
       if (hits.length === 0) {
         return params;
       }
@@ -58,10 +58,10 @@ export function clawdbMiddleware(client: ClawDB): LanguageModelMiddleware {
         : '';
 
       if (userMessage) {
-        await client.memory.remember(userMessage, { memoryType: 'message', tags: ['role:user'] });
+        await client.rememberTyped(userMessage, { type: 'message', tags: ['role:user'] });
       }
       if (assistantMessage) {
-        await client.memory.remember(assistantMessage, { memoryType: 'message', tags: ['role:assistant'] });
+        await client.rememberTyped(assistantMessage, { type: 'message', tags: ['role:assistant'] });
       }
 
       return result;
@@ -71,7 +71,7 @@ export function clawdbMiddleware(client: ClawDB): LanguageModelMiddleware {
       const streamResult = await doStream();
       const userMessage = extractLastUserMessage(params);
       if (userMessage) {
-        await client.memory.remember(userMessage, { memoryType: 'message', tags: ['role:user'] });
+        await client.rememberTyped(userMessage, { type: 'message', tags: ['role:user'] });
       }
       return streamResult;
     }

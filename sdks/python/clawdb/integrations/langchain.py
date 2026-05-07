@@ -31,8 +31,8 @@ class ClawDBRetriever(BaseRetriever):
         results = self.db.memory.search(query, top_k=self.top_k, alpha=self.alpha)
         return [
             Document(
-                page_content=r.memory.content,
-                metadata={"memory_id": r.memory.id, "score": r.score, "type": r.memory.memory_type, **r.memory.metadata},
+                page_content=r.content,
+                metadata={"memory_id": r.id, "score": r.score, "type": r.memory_type, **r.metadata},
             )
             for r in results
         ]
@@ -41,8 +41,8 @@ class ClawDBRetriever(BaseRetriever):
         results = await self.db.memory.search(query, top_k=self.top_k, alpha=self.alpha)
         return [
             Document(
-                page_content=r.memory.content,
-                metadata={"memory_id": r.memory.id, "score": r.score, "type": r.memory.memory_type, **r.memory.metadata},
+                page_content=r.content,
+                metadata={"memory_id": r.id, "score": r.score, "type": r.memory_type, **r.metadata},
             )
             for r in results
         ]
@@ -69,7 +69,7 @@ class ClawDBMemoryBuffer(BaseChatMemory):
     async def aload_memory_variables(self, inputs: dict[str, Any]) -> dict[str, Any]:
         query = inputs.get("input", "")
         results = await self.db.memory.search(query, top_k=self.top_k)
-        docs = "\n".join(r.memory.content for r in results)
+        docs = "\n".join(r.content for r in results)
         return {"history": [], "retrieved_context": docs}
 
     def save_context(self, inputs: dict[str, Any], outputs: dict[str, Any]) -> None:

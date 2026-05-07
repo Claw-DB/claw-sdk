@@ -1,91 +1,46 @@
-# clawdb (Python SDK)
+# clawdb
 
-The official Python client for **ClawDB**.
+Official Python client for ClawDB with sync and async APIs.
 
-This package is a network client, not the database engine itself. It connects to a running `clawdb-server` instance locally or to a hosted cloud endpoint.
+## Install
 
 ```bash
 pip install clawdb
 ```
 
-Before using the SDK locally, make sure `clawdb-server` is running. The intended local-first path is:
+Optional async extras:
 
 ```bash
-npx @clawdb/cli@latest init
+pip install "clawdb[async]"
 ```
 
-If you operate your own server, set `CLAWDB_ENDPOINT` to that address instead.
-
-## Sync usage
+## Quick Start
 
 ```python
 from clawdb import ClawDB
 
-db = ClawDB(endpoint="http://localhost:50050", agent_id="my-agent")
+db = ClawDB(endpoint="http://localhost:50050", agent_id="py-agent")
 
-# Store a memory
-id = db.memory.remember("Deploy at 3 PM UTC", memory_type="task", tags=["ops"])
+memory_id = db.remember_typed("Customer prefers weekly updates", type="context", tags=["customer"])
+hits = db.search("weekly updates", top_k=5, semantic=True)
+branch = db.branch("customer-experiment")
 
-# Search
-results = db.memory.search("deploy schedule", top_k=5)
-for r in results:
-    print(f"{r.score:.3f}  {r.memory.content}")
-
-# Recall by ID
-memories = db.memory.recall([id])
-
-# Forget
-db.memory.forget(id)
+print(memory_id, len(hits), branch.id)
 ```
 
-## Async usage
+## Client Variants
 
-```python
-import asyncio
-from clawdb.aio import AsyncClawDB
+- `ClawDB` for synchronous code
+- `AsyncClawDB` for asyncio applications
+- `clawdb()` helper for environment-aware client creation
 
-async def main():
-    async with AsyncClawDB(endpoint="http://localhost:50050") as db:
-        id = await db.memory.remember("Async test")
-        results = await db.memory.search("test")
+## API Surface
 
-asyncio.run(main())
-```
-
-## Branches
-
-```python
-branch = db.branches.fork("my-experiment")
-db.memory.remember("hypothesis", tags=["experiment"])  # writes to current branch
-db.branches.merge("my-experiment", into="trunk")
-```
-
-## LangChain integration
-
-```python
-from clawdb.langchain import ClawDBRetriever
-retriever = ClawDBRetriever(db=db, top_k=10)
-docs = retriever.get_relevant_documents("deploy schedule")
-```
-
-## Configuration
-
-| Env var | Description |
-|---|---|
-| `CLAWDB_ENDPOINT` | gRPC endpoint (default `http://localhost:50050`) |
-| `CLAWDB_API_KEY` | API key (`ck_live_...` or `ck_test_...`) |
-| `CLAWDB_AGENT_ID` | Agent identifier |
-
-## Runtime model
-
-- Python talks to `clawdb-server` over gRPC.
-- `clawdb-server` hosts the Rust runtime and storage engine.
-- For cloud usage, point `CLAWDB_ENDPOINT` at your hosted deployment and provide `CLAWDB_API_KEY`.
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
-
+The Python SDK covers:
+- health and readiness
+- session lifecycle
+- memory CRUD, search, recall, and listing
+- branch fork, inspect, diff, merge, discard, and archive
+- sync run, push, pull, reconcile, and status
+- reflection run, jobs, facts, preferences, contradictions, and resolution
+- transaction begin, remember, typed remember, commit, and rollback

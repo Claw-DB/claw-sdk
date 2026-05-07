@@ -6,6 +6,8 @@ import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import * as grpc from '@grpc/grpc-js';
 
+// ─── Public types ────────────────────────────────────────────────────────────
+
 export interface MemoryOptions {
   memoryType?: string;
   tags?: string[];
@@ -29,35 +31,98 @@ export interface SearchHit {
   createdAt: Date;
 }
 
-export interface BranchInfo {
+export interface MemoryRecord {
   id: string;
+  content: string;
+  memoryType: string;
+  tags: string[];
+}
+
+export interface BranchInfo {
+  branchId: string;
   name: string;
-  status: string;
-  parentId?: string;
-  createdAt?: Date;
+  branchJson?: string;
+}
+
+export interface BranchResponse {
+  branchId: string;
+  name: string;
+  requestId?: string;
 }
 
 export interface MergeResult {
   success: boolean;
   applied: number;
-  conflicts: string[];
+  skipped: number;
+  conflicts: number;
+  durationMs: number;
+  requestId?: string;
 }
 
-export interface SyncStatus {
-  connected: boolean;
-  pendingPush?: number;
-  lastSyncAt?: Date | null;
+export interface DiffResult {
+  added: number;
+  removed: number;
+  modified: number;
+  unchanged: number;
+  divergenceScore: number;
+  diffJson?: string;
+  requestId?: string;
 }
 
-export interface ReflectJob {
-  id: string;
+export interface SyncResult {
+  pushed: number;
+  pulled: number;
+  conflicts: number;
+  durationMs: number;
+  requestId?: string;
+}
+
+export interface SyncActionResult {
+  summaryJson?: string;
+  requestId?: string;
+}
+
+export interface SyncStatusResult {
+  statusJson?: string;
+  requestId?: string;
+}
+
+export interface ReflectResult {
+  jobId: string;
   status: string;
+  message: string;
+  skipped: boolean;
+  requestId?: string;
 }
 
 export interface HealthStatus {
   ok: boolean;
-  version?: string;
-  components?: Record<string, string>;
+  components?: Record<string, boolean>;
+  uptimeSecs?: number;
+  requestId?: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  token: string;
+  expiresAt: string;
+  scopes: string[];
+  requestId?: string;
+}
+
+export interface ValidateSessionResult {
+  sessionId: string;
+  agentId: string;
+  workspaceId: string;
+  role: string;
+  scopes: string[];
+  expiresAt: string;
+  requestId?: string;
+}
+
+export interface TxInfo {
+  txId: string;
+  requestId?: string;
 }
 
 export interface ClawDBConfig {
@@ -94,6 +159,7 @@ const NON_RETRYABLE = new Set<number>([
 const LOCAL_ENDPOINT = 'http://127.0.0.1:50050';
 const CLOUD_ENDPOINT = 'https://cloud.clawdb.dev';
 const SERVICE = 'clawdb.v1.ClawDBService';
+const DEFAULT_SERVER_RELEASE_VERSION = '0.1.9';
 
 const channelPool = new Map<string, RawClient>();
 
@@ -261,6 +327,58 @@ function platformId(): string {
   throw new Error(`Unsupported platform: ${process.platform}-${process.arch}`);
 }
 
+function releaseAssetCandidates(version: string): string[] {
+  const legacy = `clawdb-server-${platformId()}.tar.gz`;
+
+  if (process.platform === 'darwin' && process.arch === 'arm64') {
+    // New format (no version prefix, contains both clawdb-server and clawdb)
+    // ships from the updated release workflow on the main branch.
+    return [
+      'clawdb-aarch64-apple-darwin.tar.gz',
+      `clawdb-v${version}-aarch64-apple-darwin.tar.gz`,
+      legacy,
+    ];
+  }
+  if (process.platform === 'darwin' && process.arch === 'x64') {
+    return [
+      'clawdb-x86_64-apple-darwin.tar.gz',
+      `clawdb-v${version}-x86_64-apple-darwin.tar.gz`,
+      legacy,
+    ];
+  }
+  if (process.platform === 'linux' && process.arch === 'x64') {
+    return [
+      'clawdb-x86_64-unknown-linux-gnu.tar.gz',
+      `clawdb-v${version}-x86_64-unknown-linux-gnu.tar.gz`,
+      legacy,
+    ];
+  }
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    return [
+      'clawdb-aarch64-unknown-linux-gnu.tar.gz',
+      `clawdb-v${version}-aarch64-unknown-linux-gnu.tar.gz`,
+      legacy,
+    ];
+  }
+  if (process.platform === 'win32' && process.arch === 'x64') {
+    return [
+      'clawdb-x86_64-pc-windows-msvc.zip',
+      `clawdb-v${version}-x86_64-pc-windows-msvc.zip`,
+      legacy,
+    ];
+  }
+
+  throw new Error(`Unsupported platform: ${process.platform}-${process.arch}`);
+}
+
+function serverReleaseVersion(): string {
+  const configured = process.env.CLAWDB_SERVER_RELEASE_VERSION?.trim();
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+  return DEFAULT_SERVER_RELEASE_VERSION;
+}
+
 async function downloadFile(url: string, targetFile: string): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -272,13 +390,18 @@ async function downloadFile(url: string, targetFile: string): Promise<void> {
   writeFileSync(targetFile, Buffer.from(bytes));
 }
 
-function releaseBaseCandidates(): string[] {
+function releaseBaseCandidates(version: string): string[] {
   const configured = process.env.CLAWDB_SERVER_RELEASE_BASE_URL?.trim();
   const candidates = [
     configured,
+    // Prefer latest/download — picks up the new archive format (both binaries) from any future release
     'https://github.com/Claw-DB/ClawDB/releases/latest/download',
     'https://github.com/clawdb/clawdb/releases/latest/download',
-    'https://github.com/claw-db/clawdb/releases/latest/download'
+    'https://github.com/claw-db/clawdb/releases/latest/download',
+    // Specific versioned tag URLs as fallback — may only ship the old CLI-only archive
+    `https://github.com/Claw-DB/ClawDB/releases/download/v${version}`,
+    `https://github.com/clawdb/clawdb/releases/download/v${version}`,
+    `https://github.com/claw-db/clawdb/releases/download/v${version}`,
   ].filter((value): value is string => Boolean(value && value.length > 0));
 
   return Array.from(new Set(candidates));
@@ -303,16 +426,23 @@ function parseChecksums(content: string): Map<string, string> {
   return map;
 }
 
-async function resolveReleaseBase(archiveName: string): Promise<{ base: string; checksums: Map<string, string> }> {
-  for (const base of releaseBaseCandidates()) {
+async function resolveReleaseBase(archiveNames: string[], version: string): Promise<{ base: string; archiveName: string; checksums?: Map<string, string> }> {
+  for (const base of releaseBaseCandidates(version)) {
     try {
       const checksumsResponse = await fetch(`${base}/checksums.txt`);
-      if (!checksumsResponse.ok) {
-        continue;
+      if (checksumsResponse.ok) {
+        const checksums = parseChecksums(await checksumsResponse.text());
+        const withChecksum = archiveNames.find((name) => checksums.has(name));
+        if (withChecksum) {
+          return { base, archiveName: withChecksum, checksums };
+        }
       }
-      const checksums = parseChecksums(await checksumsResponse.text());
-      if (checksums.has(archiveName)) {
-        return { base, checksums };
+
+      for (const archiveName of archiveNames) {
+        const probe = await fetch(`${base}/${archiveName}`, { method: 'HEAD' });
+        if (probe.ok) {
+          return { base, archiveName };
+        }
       }
     } catch {
       // try next base candidate
@@ -327,7 +457,7 @@ async function resolveReleaseBase(archiveName: string): Promise<{ base: string; 
 
 function startDetachedServer(binaryPath: string): Promise<number> {
   return new Promise<number>((resolveStart, rejectStart) => {
-    const child = spawn(binaryPath, ['--port', '50050'], {
+    const child = spawn(binaryPath, ['--grpc-port', '50050'], {
       detached: true,
       stdio: 'ignore'
     });
@@ -377,9 +507,9 @@ async function ensureLocalServerAvailable(): Promise<string> {
     // fallback to download path
   }
 
-  const platform = platformId();
-  const archiveName = `clawdb-server-${platform}.tar.gz`;
-  const { base, checksums } = await resolveReleaseBase(archiveName);
+  const version = serverReleaseVersion();
+  const archiveCandidates = releaseAssetCandidates(version);
+  const { base, archiveName, checksums } = await resolveReleaseBase(archiveCandidates, version);
 
   const binDir = join(homedir(), '.clawdb', 'bin');
   const tempArchive = join(binDir, `${archiveName}.tmp`);
@@ -388,19 +518,20 @@ async function ensureLocalServerAvailable(): Promise<string> {
     : join(binDir, 'clawdb-server');
 
   await downloadFile(`${base}/${archiveName}`, tempArchive);
-  const expected = checksums.get(archiveName);
-  if (!expected) {
-    throw new Error(`Missing checksum for ${archiveName}`);
-  }
-
-  const actual = sha256(tempArchive);
-  if (actual !== expected) {
-    unlinkSync(tempArchive);
-    throw new Error('Downloaded clawdb-server checksum verification failed');
+  const expected = checksums?.get(archiveName);
+  if (expected) {
+    const actual = sha256(tempArchive);
+    if (actual !== expected) {
+      unlinkSync(tempArchive);
+      throw new Error('Downloaded clawdb-server checksum verification failed');
+    }
   }
 
   mkdirSync(binDir, { recursive: true });
-  const extract = spawn('tar', ['-xzf', tempArchive, '-C', binDir]);
+  const isZipArchive = archiveName.endsWith('.zip');
+  const extract = isZipArchive
+    ? spawn('powershell', ['-NoProfile', '-Command', `Expand-Archive -LiteralPath '${tempArchive}' -DestinationPath '${binDir}' -Force`])
+    : spawn('tar', ['-xzf', tempArchive, '-C', binDir]);
   await new Promise<void>((resolveExtract, rejectExtract) => {
     extract.on('exit', (code) => {
       if (code === 0) {
@@ -413,14 +544,27 @@ async function ensureLocalServerAvailable(): Promise<string> {
   });
 
   const candidates = [
-    join(binDir, `clawdb-server-${platform}`),
+    // Prefer the actual server daemon binary (new release format ships both)
     join(binDir, 'clawdb-server'),
-    join(binDir, 'clawdb-server.exe')
+    join(binDir, 'clawdb-server.exe'),
+    // Fall back to CLI binary (old release format — only ships clawdb)
+    join(binDir, 'clawdb'),
+    join(binDir, 'clawdb.exe'),
   ];
 
   const extracted = candidates.find((candidate) => existsSync(candidate));
   if (!extracted) {
     throw new Error('Downloaded archive did not contain clawdb-server binary');
+  }
+
+  // If we only got the CLI binary (old release format, no separate daemon), warn clearly.
+  const isCliOnly = extracted.endsWith('clawdb') || extracted.endsWith('clawdb.exe');
+  if (isCliOnly) {
+    unlinkSync(tempArchive);
+    throw new Error(
+      'Auto-provisioning unavailable: the downloaded release only contains the clawdb CLI, not the clawdb-server daemon. ' +
+      'Run `cargo install clawdb-server` to install the server, or set CLAWDB_SERVER_RELEASE_BASE_URL to a release that ships the clawdb-server binary.'
+    );
   }
 
   renameSync(extracted, finalBinary);
@@ -449,7 +593,7 @@ function deriveAgentId(): string {
 }
 
 export class ClawDB extends EventEmitter {
-  public static readonly version: string = '0.1.5';
+  public static readonly version: string = '0.1.11';
 
   readonly endpoint: string;
   readonly apiKey?: string;
@@ -462,42 +606,6 @@ export class ClawDB extends EventEmitter {
   private readonly skipLocalBootstrap: boolean;
   private shouldWatchConnectivity = true;
   private localBootstrapPromise?: Promise<void>;
-
-  readonly memory: {
-    remember: (content: string, opts?: MemoryOptions) => Promise<string>;
-    search: (query: string, opts?: SearchOptions) => Promise<SearchHit[]>;
-    recall: (ids: string[]) => Promise<SearchHit[]>;
-    delete: (id: string) => Promise<void>;
-    list: (opts?: { type?: string; limit?: number; cursor?: string }) => Promise<{ hits: SearchHit[]; nextCursor?: string }>;
-  };
-
-  readonly branch: {
-    fork: (name: string) => Promise<BranchInfo>;
-    merge: (branchId: string, strategy?: 'last-write' | 'source-wins') => Promise<MergeResult>;
-    diff: (branchA: string, branchB: string) => Promise<Record<string, unknown>>;
-    list: () => Promise<BranchInfo[]>;
-    discard: (branchId: string) => Promise<void>;
-  };
-
-  readonly sync: {
-    now: () => Promise<SyncStatus>;
-    status: () => Promise<SyncStatus>;
-  };
-
-  readonly reflect: {
-    run: () => Promise<ReflectJob>;
-    status: (id: string) => Promise<ReflectJob>;
-  };
-
-  readonly session: {
-    create: () => Promise<{ token?: string }>;
-    revoke: () => Promise<void>;
-    whoami: () => Promise<{ agentId: string }>;
-  };
-
-  readonly health: {
-    check: () => Promise<HealthStatus>;
-  };
 
   constructor(config: ClawDBConfig = {}) {
     super();
@@ -512,115 +620,352 @@ export class ClawDB extends EventEmitter {
 
     this.client = getOrCreateClient(this.endpoint);
     this.watchConnectivity();
+  }
 
-    this.memory = {
-      remember: async (content, opts = {}) => {
-        const response = await this.unaryCall<{ memory_id?: string; memoryId?: string }>('Remember', {
-          agent_id: this.agentId,
-          content,
-          memory_type: opts.memoryType ?? 'message',
-          tags: opts.tags ?? [],
-          metadata: opts.metadata ?? {}
-        });
-        return response.memory_id ?? response.memoryId ?? '';
-      },
-      search: async (query, opts = {}) => {
-        const response = await this.unaryCall<{ results?: Array<Record<string, unknown>> }>(
-          'Search',
-          {
-            agent_id: this.agentId,
-            query,
-            top_k: opts.topK ?? 10,
-            semantic: opts.semantic ?? true,
-            filter: opts.filter ?? {}
-          },
-          { signal: opts.signal }
-        );
-        const results = response.results ?? [];
-        const hits = results.map((raw): SearchHit => ({
-          id: String(raw.id ?? ''),
-          content: String(raw.content ?? ''),
-          score: Number(raw.score ?? 0),
-          memoryType: String(raw.memory_type ?? raw.memoryType ?? 'message'),
-          tags: Array.isArray(raw.tags) ? raw.tags.map((v) => String(v)) : [],
-          metadata: (raw.metadata as Record<string, unknown>) ?? {},
-          createdAt: parseDate(raw.created_at ?? raw.createdAt)
-        }));
-        hits.sort((a, b) => b.score - a.score);
-        return hits;
-      },
-      recall: async (ids) => {
-        const response = await this.unaryCall<{ memories?: Array<Record<string, unknown>> }>('Recall', {
-          agent_id: this.agentId,
-          ids
-        });
-        return (response.memories ?? []).map((raw): SearchHit => ({
-          id: String(raw.id ?? ''),
-          content: String(raw.content ?? ''),
-          score: Number(raw.score ?? 0),
-          memoryType: String(raw.memory_type ?? raw.memoryType ?? 'message'),
-          tags: Array.isArray(raw.tags) ? raw.tags.map((v) => String(v)) : [],
-          metadata: (raw.metadata as Record<string, unknown>) ?? {},
-          createdAt: parseDate(raw.created_at ?? raw.createdAt)
-        }));
-      },
-      delete: async (id) => {
-        await this.unaryCall('DeleteMemory', { agent_id: this.agentId, id });
-      },
-      list: async (opts = {}) => {
-        const response = await this.unaryCall<{ hits?: Array<Record<string, unknown>>; next_cursor?: string; nextCursor?: string }>('ListMemories', {
-          agent_id: this.agentId,
-          type: opts.type,
-          limit: opts.limit,
-          cursor: opts.cursor
-        });
-        return {
-          hits: (response.hits ?? []).map((raw): SearchHit => ({
-            id: String(raw.id ?? ''),
-            content: String(raw.content ?? ''),
-            score: Number(raw.score ?? 0),
-            memoryType: String(raw.memory_type ?? raw.memoryType ?? 'message'),
-            tags: Array.isArray(raw.tags) ? raw.tags.map((v) => String(v)) : [],
-            metadata: (raw.metadata as Record<string, unknown>) ?? {},
-            createdAt: parseDate(raw.created_at ?? raw.createdAt)
-          })),
-          nextCursor: response.next_cursor ?? response.nextCursor
-        };
-      }
-    };
+  // ─── Health ──────────────────────────────────────────────────────────────
 
-    this.branch = {
-      fork: (name) => this.unaryCall<BranchInfo>('ForkBranch', { agent_id: this.agentId, name }),
-      merge: (branchId, strategy = 'last-write') => this.unaryCall<MergeResult>('MergeBranch', { agent_id: this.agentId, branch_id: branchId, strategy }),
-      diff: (branchA, branchB) => this.unaryCall<Record<string, unknown>>('DiffBranch', { agent_id: this.agentId, branch_a: branchA, branch_b: branchB }),
-      list: () => this.unaryCall<BranchInfo[]>('ListBranches', { agent_id: this.agentId }),
-      discard: async (branchId) => {
-        await this.unaryCall('DiscardBranch', { agent_id: this.agentId, branch_id: branchId });
-      }
-    };
-
-    this.sync = {
-      now: () => this.unaryCall<SyncStatus>('SyncNow', { agent_id: this.agentId }),
-      status: () => this.unaryCall<SyncStatus>('SyncStatus', { agent_id: this.agentId })
-    };
-
-    this.reflect = {
-      run: () => this.unaryCall<ReflectJob>('ReflectRun', { agent_id: this.agentId }),
-      status: (id) => this.unaryCall<ReflectJob>('ReflectStatus', { agent_id: this.agentId, id })
-    };
-
-    this.session = {
-      create: () => this.unaryCall<{ token?: string }>('CreateSession', { agent_id: this.agentId }),
-      revoke: async () => {
-        await this.unaryCall('RevokeSession', { agent_id: this.agentId });
-      },
-      whoami: () => this.unaryCall<{ agentId: string }>('WhoAmI', { agent_id: this.agentId })
-    };
-
-    this.health = {
-      check: () => this.unaryCall<HealthStatus>('HealthCheck', {})
+  async health(): Promise<HealthStatus> {
+    const r = await this.unaryCall<Record<string, unknown>>('Health', {});
+    return {
+      ok: Boolean(r.ok),
+      components: (r.components as Record<string, boolean>) ?? {},
+      uptimeSecs: Number(r.uptime_secs ?? r.uptimeSecs ?? 0),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
     };
   }
+
+  async ping(): Promise<void> {
+    await this.unaryCall('Health', {}, { timeoutMs: 500 });
+  }
+
+  // ─── Sessions ─────────────────────────────────────────────────────────────
+
+  async createSession(opts: {
+    agentId?: string;
+    role?: string;
+    scopes?: string[];
+    ttlSecs?: number;
+  } = {}): Promise<SessionInfo> {
+    const r = await this.unaryCall<Record<string, unknown>>('CreateSession', {
+      agent_id: opts.agentId ?? this.agentId,
+      role: opts.role ?? '',
+      scopes: opts.scopes ?? [],
+      ttl_secs: opts.ttlSecs ?? 0,
+    });
+    return {
+      id: String(r.id ?? ''),
+      token: String(r.token ?? ''),
+      expiresAt: String(r.expires_at ?? r.expiresAt ?? ''),
+      scopes: Array.isArray(r.scopes) ? r.scopes.map(String) : [],
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  async validateSession(): Promise<ValidateSessionResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('ValidateSession', {});
+    return {
+      sessionId: String(r.session_id ?? r.sessionId ?? ''),
+      agentId: String(r.agent_id ?? r.agentId ?? ''),
+      workspaceId: String(r.workspace_id ?? r.workspaceId ?? ''),
+      role: String(r.role ?? ''),
+      scopes: Array.isArray(r.scopes) ? r.scopes.map(String) : [],
+      expiresAt: String(r.expires_at ?? r.expiresAt ?? ''),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  async revokeSession(sessionId: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('RevokeSession', { session_id: sessionId });
+    return Boolean(r.revoked);
+  }
+
+  async activeSessionCount(): Promise<number> {
+    const r = await this.unaryCall<Record<string, unknown>>('ActiveSessionCount', {});
+    return Number(r.count ?? 0);
+  }
+
+  // ─── Memory ───────────────────────────────────────────────────────────────
+
+  async remember(content: string): Promise<string> {
+    const r = await this.unaryCall<Record<string, unknown>>('Remember', { content });
+    return String(r.memory_id ?? r.memoryId ?? '');
+  }
+
+  async rememberTyped(content: string, opts: {
+    type?: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+  } = {}): Promise<string> {
+    const r = await this.unaryCall<Record<string, unknown>>('RememberTyped', {
+      content,
+      type: opts.type ?? 'context',
+      tags: opts.tags ?? [],
+      metadata_json: JSON.stringify(opts.metadata ?? {}),
+    });
+    return String(r.memory_id ?? r.memoryId ?? '');
+  }
+
+  async updateMemory(memoryId: string, content: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('UpdateMemory', { memory_id: memoryId, content });
+    return Boolean(r.updated);
+  }
+
+  async search(query: string, opts: SearchOptions = {}): Promise<SearchHit[]> {
+    const r = await this.unaryCall<Record<string, unknown>>(
+      'Search',
+      {
+        query,
+        top_k: opts.topK ?? 10,
+        semantic: opts.semantic ?? true,
+        filter_json: JSON.stringify(opts.filter ?? {}),
+      },
+      { signal: opts.signal }
+    );
+    const hits = (Array.isArray(r.hits) ? r.hits : []) as Array<Record<string, unknown>>;
+    return hits.map((h): SearchHit => ({
+      id: String(h.id ?? ''),
+      content: String(h.content ?? ''),
+      score: Number(h.score ?? 0),
+      memoryType: String(h.memory_type ?? h.memoryType ?? ''),
+      tags: Array.isArray(h.tags) ? h.tags.map(String) : [],
+      metadata: typeof h.metadata_json === 'string'
+        ? (JSON.parse(h.metadata_json || '{}') as Record<string, unknown>)
+        : ((h.metadata as Record<string, unknown>) ?? {}),
+      createdAt: parseDate(h.created_at ?? h.createdAt),
+    }));
+  }
+
+  async recall(memoryIds: string[]): Promise<MemoryRecord[]> {
+    const r = await this.unaryCall<Record<string, unknown>>('Recall', { memory_ids: memoryIds });
+    const memories = (Array.isArray(r.memories) ? r.memories : []) as Array<Record<string, unknown>>;
+    return memories.map((m): MemoryRecord => ({
+      id: String(m.id ?? ''),
+      content: String(m.content ?? ''),
+      memoryType: String(m.memory_type ?? m.memoryType ?? ''),
+      tags: Array.isArray(m.tags) ? m.tags.map(String) : [],
+    }));
+  }
+
+  async listMemories(opts: { type?: string; limit?: number } = {}): Promise<MemoryRecord[]> {
+    const r = await this.unaryCall<Record<string, unknown>>('ListMemories', {
+      type: opts.type ?? '',
+      limit: opts.limit ?? 50,
+    });
+    const memories = (Array.isArray(r.memories) ? r.memories : []) as Array<Record<string, unknown>>;
+    return memories.map((m): MemoryRecord => ({
+      id: String(m.id ?? ''),
+      content: String(m.content ?? ''),
+      memoryType: String(m.memory_type ?? m.memoryType ?? ''),
+      tags: Array.isArray(m.tags) ? m.tags.map(String) : [],
+    }));
+  }
+
+  async deleteMemory(memoryId: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('DeleteMemory', { memory_id: memoryId });
+    return Boolean(r.deleted);
+  }
+
+  // ─── Branches ─────────────────────────────────────────────────────────────
+
+  async branch(name: string, from = ''): Promise<BranchResponse> {
+    const r = await this.unaryCall<Record<string, unknown>>('Branch', { name, from });
+    return {
+      branchId: String(r.branch_id ?? r.branchId ?? ''),
+      name: String(r.name ?? ''),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  async getBranch(branchId: string): Promise<BranchInfo> {
+    const r = await this.unaryCall<Record<string, unknown>>('GetBranch', { branch_id: branchId });
+    const b = (r.branch as Record<string, unknown>) ?? {};
+    return { branchId: String(b.branch_id ?? b.branchId ?? ''), name: String((b as Record<string, unknown>).name ?? ''), branchJson: String(b.branch_json ?? b.branchJson ?? '') };
+  }
+
+  async getBranchByName(name: string): Promise<BranchInfo> {
+    const r = await this.unaryCall<Record<string, unknown>>('GetBranchByName', { name });
+    const b = (r.branch as Record<string, unknown>) ?? {};
+    return { branchId: String(b.branch_id ?? b.branchId ?? ''), name: String((b as Record<string, unknown>).name ?? ''), branchJson: String(b.branch_json ?? b.branchJson ?? '') };
+  }
+
+  async getTrunkBranch(): Promise<BranchInfo> {
+    const r = await this.unaryCall<Record<string, unknown>>('GetTrunkBranch', {});
+    const b = (r.branch as Record<string, unknown>) ?? {};
+    return { branchId: String(b.branch_id ?? b.branchId ?? ''), name: String((b as Record<string, unknown>).name ?? ''), branchJson: String(b.branch_json ?? b.branchJson ?? '') };
+  }
+
+  async listBranches(): Promise<BranchInfo[]> {
+    const r = await this.unaryCall<Record<string, unknown>>('ListBranches', {});
+    const branches = (Array.isArray(r.branches) ? r.branches : []) as Array<Record<string, unknown>>;
+    return branches.map((b) => ({
+      branchId: String(b.branch_id ?? b.branchId ?? ''),
+      name: String((b as Record<string, unknown>).name ?? ''),
+      branchJson: String(b.branch_json ?? b.branchJson ?? ''),
+    }));
+  }
+
+  async discardBranch(branchId: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('DiscardBranch', { branch_id: branchId });
+    return Boolean(r.discarded);
+  }
+
+  async archiveBranch(branchId: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('ArchiveBranch', { branch_id: branchId });
+    return Boolean(r.archived);
+  }
+
+  async merge(source: string, target: string, strategy = ''): Promise<MergeResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('Merge', { source, target, strategy });
+    return {
+      success: Boolean(r.success),
+      applied: Number(r.applied ?? 0),
+      skipped: Number(r.skipped ?? 0),
+      conflicts: Number(r.conflicts ?? 0),
+      durationMs: Number(r.duration_ms ?? r.durationMs ?? 0),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  async diff(branchId: string, target = ''): Promise<DiffResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('Diff', { branch_id: branchId, target });
+    return {
+      added: Number(r.added ?? 0),
+      removed: Number(r.removed ?? 0),
+      modified: Number(r.modified ?? 0),
+      unchanged: Number(r.unchanged ?? 0),
+      divergenceScore: Number(r.divergence_score ?? r.divergenceScore ?? 0),
+      diffJson: String(r.diff_json ?? r.diffJson ?? ''),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  // ─── Sync ─────────────────────────────────────────────────────────────────
+
+  async sync(): Promise<SyncResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('Sync', {});
+    return {
+      pushed: Number(r.pushed ?? 0),
+      pulled: Number(r.pulled ?? 0),
+      conflicts: Number(r.conflicts ?? 0),
+      durationMs: Number(r.duration_ms ?? r.durationMs ?? 0),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  async pushSync(): Promise<SyncActionResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('PushSync', {});
+    return { summaryJson: String(r.summary_json ?? r.summaryJson ?? ''), requestId: String(r.request_id ?? r.requestId ?? '') };
+  }
+
+  async pullSync(): Promise<SyncActionResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('PullSync', {});
+    return { summaryJson: String(r.summary_json ?? r.summaryJson ?? ''), requestId: String(r.request_id ?? r.requestId ?? '') };
+  }
+
+  async reconcileSync(): Promise<SyncActionResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReconcileSync', {});
+    return { summaryJson: String(r.summary_json ?? r.summaryJson ?? ''), requestId: String(r.request_id ?? r.requestId ?? '') };
+  }
+
+  async syncStatus(): Promise<SyncStatusResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('SyncStatus', {});
+    return { statusJson: String(r.status_json ?? r.statusJson ?? ''), requestId: String(r.request_id ?? r.requestId ?? '') };
+  }
+
+  // ─── Reflect ──────────────────────────────────────────────────────────────
+
+  async reflect(): Promise<ReflectResult> {
+    const r = await this.unaryCall<Record<string, unknown>>('Reflect', {});
+    return {
+      jobId: String(r.job_id ?? r.jobId ?? ''),
+      status: String(r.status ?? ''),
+      message: String(r.message ?? ''),
+      skipped: Boolean(r.skipped),
+      requestId: String(r.request_id ?? r.requestId ?? ''),
+    };
+  }
+
+  async reflectGetFacts(agentId: string): Promise<unknown> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReflectGetFacts', { agent_id: agentId });
+    return typeof r.json === 'string' ? JSON.parse(r.json || '{}') : r;
+  }
+
+  async reflectListJobs(agentId: string, opts: { status?: string; limit?: number; offset?: number } = {}): Promise<unknown> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReflectListJobs', {
+      agent_id: agentId,
+      status: opts.status ?? '',
+      limit: opts.limit ?? 20,
+      offset: opts.offset ?? 0,
+    });
+    return typeof r.json === 'string' ? JSON.parse(r.json || '{}') : r;
+  }
+
+  async reflectGetJob(jobId: string): Promise<unknown> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReflectGetJob', { job_id: jobId });
+    return typeof r.json === 'string' ? JSON.parse(r.json || '{}') : r;
+  }
+
+  async reflectGetPreferences(agentId: string): Promise<unknown> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReflectGetPreferences', { agent_id: agentId });
+    return typeof r.json === 'string' ? JSON.parse(r.json || '{}') : r;
+  }
+
+  async reflectGetContradictions(agentId: string): Promise<unknown> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReflectGetContradictions', { agent_id: agentId });
+    return typeof r.json === 'string' ? JSON.parse(r.json || '{}') : r;
+  }
+
+  async reflectResolveContradiction(agentId: string, contradictionId: string, opts: {
+    strategy?: string;
+    mergedValueJson?: string;
+  } = {}): Promise<unknown> {
+    const r = await this.unaryCall<Record<string, unknown>>('ReflectResolveContradiction', {
+      agent_id: agentId,
+      contradiction_id: contradictionId,
+      strategy: opts.strategy ?? '',
+      merged_value_json: opts.mergedValueJson ?? '',
+    });
+    return typeof r.json === 'string' ? JSON.parse(r.json || '{}') : r;
+  }
+
+  // ─── Transactions ─────────────────────────────────────────────────────────
+
+  async beginTx(): Promise<TxInfo> {
+    const r = await this.unaryCall<Record<string, unknown>>('BeginTx', {});
+    return { txId: String(r.tx_id ?? r.txId ?? ''), requestId: String(r.request_id ?? r.requestId ?? '') };
+  }
+
+  async txRemember(txId: string, content: string): Promise<string> {
+    const r = await this.unaryCall<Record<string, unknown>>('TxRemember', { tx_id: txId, content });
+    return String(r.memory_id ?? r.memoryId ?? '');
+  }
+
+  async txRememberTyped(txId: string, content: string, opts: {
+    type?: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+  } = {}): Promise<string> {
+    const r = await this.unaryCall<Record<string, unknown>>('TxRememberTyped', {
+      tx_id: txId,
+      content,
+      type: opts.type ?? 'context',
+      tags: opts.tags ?? [],
+      metadata_json: JSON.stringify(opts.metadata ?? {}),
+    });
+    return String(r.memory_id ?? r.memoryId ?? '');
+  }
+
+  async commitTx(txId: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('CommitTx', { tx_id: txId });
+    return Boolean(r.committed);
+  }
+
+  async rollbackTx(txId: string): Promise<boolean> {
+    const r = await this.unaryCall<Record<string, unknown>>('RollbackTx', { tx_id: txId });
+    return Boolean(r.rolled_back ?? r.rolledBack);
+  }
+
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
 
   static fromEnv(): ClawDB {
     const timeoutRaw = Number(process.env.CLAWDB_TIMEOUT_MS ?? '10000');
@@ -656,10 +1001,6 @@ export class ClawDB extends EventEmitter {
 
     const endpoint = await ensureLocalServerAvailable();
     return new ClawDB({ ...config, endpoint });
-  }
-
-  async ping(): Promise<void> {
-    await this.unaryCall('HealthCheck', {}, { timeoutMs: 500 });
   }
 
   close(): void {

@@ -1,79 +1,82 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-MemoryType = Literal["context", "task", "tool_output", "session", "reasoning_trace", "message", "summary"]
-BranchStatus = Literal["active", "dormant", "merged", "discarded", "archived"]
-ReflectJobStatus = Literal["pending", "running", "completed", "failed"]
+MemoryType = str
+BranchStatus = str
+ReflectJobStatus = str
 
 
 class MemoryRecord(BaseModel):
-    id: str
-    agent_id: str
-    content: str
-    memory_type: MemoryType
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    id: str = ""
+    content: str = ""
+    memory_type: str = ""
     tags: list[str] = Field(default_factory=list)
-    importance_score: float
-    is_promoted: bool
-    created_at: datetime
-    updated_at: datetime
 
 
 class SearchResult(BaseModel):
-    memory: MemoryRecord
-    score: float
+    id: str = ""
+    content: str = ""
+    score: float = 0.0
+    memory_type: str = ""
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class BranchInfo(BaseModel):
-    id: str
-    name: str
-    status: BranchStatus
-    parent_id: str | None
-    created_at: datetime
-    divergence_score: float
+    branch_id: str = ""
+    name: str = ""
+    branch_json: str = ""
 
 
 class SyncResult(BaseModel):
-    pushed: int
-    pulled: int
-    conflicts: int
-    synced_at: datetime
+    pushed: int = 0
+    pulled: int = 0
+    conflicts: int = 0
+    duration_ms: int = 0
+    request_id: str = ""
+
+
+class SyncActionResult(BaseModel):
+    summary_json: str = ""
+    request_id: str = ""
+
+
+class SyncStatusResult(BaseModel):
+    status_json: str = ""
+    request_id: str = ""
 
 
 class ReflectJob(BaseModel):
-    job_id: str
-    status: ReflectJobStatus
-    processed: int
-    archived: int
-    promoted: int
-
-
-class AgentProfile(BaseModel):
-    preferences: dict[str, Any] = Field(default_factory=dict)
-    facts: dict[str, Any] = Field(default_factory=dict)
-    memory_count: int
-    last_updated_at: datetime
+    job_id: str = ""
+    status: str = ""
+    message: str = ""
+    skipped: bool = False
+    request_id: str = ""
 
 
 class DiffResult(BaseModel):
-    added: int
-    removed: int
-    modified: int
-    divergence_score: float
-    entity_diffs: list[dict[str, Any]] = Field(default_factory=list)
+    added: int = 0
+    removed: int = 0
+    modified: int = 0
+    unchanged: int = 0
+    divergence_score: float = 0.0
+    diff_json: str = ""
+    request_id: str = ""
 
 
 class MergeResult(BaseModel):
-    applied: int
-    conflicts: list[dict[str, Any]] = Field(default_factory=list)
-    success: bool
+    success: bool = False
+    applied: int = 0
+    skipped: int = 0
+    conflicts: int = 0
+    duration_ms: int = 0
+    request_id: str = ""
 
 
-class SyncStatus(BaseModel):
-    connected: bool
-    pending_push: int
-    last_sync_at: datetime | None
+class TxInfo(BaseModel):
+    tx_id: str = ""
+    request_id: str = ""
+
