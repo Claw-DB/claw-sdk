@@ -1,10 +1,20 @@
 # clawdb (Python SDK)
 
-The official Python client for **ClawDB** — persistent, branchable, semantically-searchable agent memory.
+The official Python client for **ClawDB**.
+
+This package is a network client, not the database engine itself. It connects to a running `clawdb-server` instance locally or to a hosted cloud endpoint.
 
 ```bash
 pip install clawdb
 ```
+
+Before using the SDK locally, make sure `clawdb-server` is running. The intended local-first path is:
+
+```bash
+npx @clawdb/cli@latest init
+```
+
+If you operate your own server, set `CLAWDB_ENDPOINT` to that address instead.
 
 ## Sync usage
 
@@ -65,6 +75,12 @@ docs = retriever.get_relevant_documents("deploy schedule")
 | `CLAWDB_ENDPOINT` | gRPC endpoint (default `http://localhost:50050`) |
 | `CLAWDB_API_KEY` | API key (`ck_live_...` or `ck_test_...`) |
 | `CLAWDB_AGENT_ID` | Agent identifier |
+
+## Runtime model
+
+- Python talks to `clawdb-server` over gRPC.
+- `clawdb-server` hosts the Rust runtime and storage engine.
+- For cloud usage, point `CLAWDB_ENDPOINT` at your hosted deployment and provide `CLAWDB_API_KEY`.
 
 ## Development
 

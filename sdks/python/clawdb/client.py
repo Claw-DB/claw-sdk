@@ -1,6 +1,7 @@
 """Sync ClawDB client."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import structlog
@@ -9,6 +10,7 @@ from clawdb._transport import create_channel
 from clawdb.branches import BranchClient
 from clawdb.config import ClawDBConfig
 from clawdb.memory import MemoryClient
+from clawdb.provision import resolve_endpoint
 from clawdb.reflect import ReflectClient
 from clawdb.session import SessionClient
 from clawdb.sync_client import SyncClientWrapper
@@ -62,7 +64,28 @@ class ClawDB:
     def from_api_key(cls, api_key: str, endpoint: str) -> "ClawDB":
         return cls(api_key=api_key, endpoint=endpoint)
 
+    @classmethod
+    def auto_provision(cls) -> "ClawDB":
+        try:
+            result = asyncio.run(resolve_endpoint())
+        except RuntimeError:
+            # If we're already on an event loop, fall back to env defaults.
+            return cls.from_env()
+
+        return cls(endpoint=result.endpoint, api_key=result.api_key)
+
+    def _should_resolve_local_endpoint(self) -> bool:
+        return not self._config.api_key and self._config.endpoint in ("", "http://localhost:50050")
+
     def connect(self) -> None:
+        if self._should_resolve_local_endpoint():
+            try:
+                result = asyncio.run(resolve_endpoint())
+                self._config.endpoint = result.endpoint
+                if result.api_key:
+                    self._config.api_key = result.api_key
+            except RuntimeError:
+                pass
         self._channel = create_channel(self._config)
         self._stub = _load_stub(self._channel)
         self._session_client = SessionClient(self._stub, agent_id=self._config.agent_id, role=self._config.role, api_key=self._config.api_key)

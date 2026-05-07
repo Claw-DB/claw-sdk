@@ -90,6 +90,10 @@ class ClawDBRateLimitError(ClawDBError):
         super().__init__("RATE_LIMITED", message, details=details, request_id=request_id)
         self.retry_after_ms = retry_after_ms
 
+    @property
+    def retry_after_seconds(self) -> float:
+        return self.retry_after_ms / 1000.0
+
 
 class ClawDBUnavailableError(ClawDBError):
     def __init__(self, message: str = "Service unavailable", *, request_id: str | None = None, details: Any = None) -> None:
@@ -112,3 +116,8 @@ class ClawDBValidationError(ClawDBError):
 class ClawDBInternalError(ClawDBError):
     def __init__(self, message: str = "Internal server error", *, request_id: str | None = None, details: Any = None) -> None:
         super().__init__("INTERNAL", message, details=details, request_id=request_id)
+
+
+class ClawDBProvisionError(ClawDBError):
+    def __init__(self, message: str = "Provisioning failed", *, request_id: str | None = None, details: Any = None) -> None:
+        super().__init__("PROVISION_FAILED", message, details=details, request_id=request_id)

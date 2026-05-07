@@ -19,6 +19,7 @@ from clawdb.branches import BranchClient
 from clawdb.config import ClawDBConfig
 from clawdb.errors import ClawDBError, ClawDBRateLimitError, ClawDBUnavailableError, ClawDBValidationError
 from clawdb.models import BranchInfo, DiffResult, MemoryRecord, MergeResult, ReflectJob, SearchResult, SyncResult
+from clawdb.provision import resolve_endpoint
 
 log = structlog.get_logger(__name__)
 T = TypeVar("T")
@@ -267,7 +268,20 @@ class AsyncClawDB:
     def from_api_key(cls, api_key: str, endpoint: str) -> "AsyncClawDB":
         return cls(api_key=api_key, endpoint=endpoint)
 
+    @classmethod
+    async def auto_provision(cls) -> "AsyncClawDB":
+        result = await resolve_endpoint()
+        return cls(endpoint=result.endpoint, api_key=result.api_key)
+
+    def _should_resolve_local_endpoint(self) -> bool:
+        return not self._config.api_key and self._config.endpoint in ("", "http://localhost:50050")
+
     async def connect(self) -> None:
+        if self._should_resolve_local_endpoint():
+            result = await resolve_endpoint()
+            self._config.endpoint = result.endpoint
+            if result.api_key:
+                self._config.api_key = result.api_key
         self._channel = create_async_channel(self._config)
         self._stub = _load_async_stub(self._channel)
         from clawdb.session import SessionClient
