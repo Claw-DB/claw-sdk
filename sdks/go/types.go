@@ -19,22 +19,27 @@ const (
 
 // MemoryRecord is a single stored memory.
 type MemoryRecord struct {
-	ID             string                 `json:"id"`
-	AgentID        string                 `json:"agent_id"`
-	Content        string                 `json:"content"`
-	MemoryType     MemoryType             `json:"memory_type"`
-	Tags           []string               `json:"tags"`
-	Metadata       map[string]interface{} `json:"metadata"`
-	ImportanceScore float64               `json:"importance_score"`
-	IsPromoted     bool                   `json:"is_promoted"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
+	ID              string                 `json:"id"`
+	AgentID         string                 `json:"agent_id"`
+	Content         string                 `json:"content"`
+	MemoryType      MemoryType             `json:"memory_type"`
+	Tags            []string               `json:"tags"`
+	Metadata        map[string]interface{} `json:"metadata"`
+	ImportanceScore float64                `json:"importance_score"`
+	IsPromoted      bool                   `json:"is_promoted"`
+	CreatedAt       time.Time              `json:"created_at"`
+	UpdatedAt       time.Time              `json:"updated_at"`
 }
 
-// SearchResult pairs a MemoryRecord with its relevance score.
-type SearchResult struct {
-	Memory MemoryRecord `json:"memory"`
-	Score  float64      `json:"score"`
+// SearchHit is a flattened memory search result.
+type SearchHit struct {
+	ID         string                 `json:"id"`
+	Content    string                 `json:"content"`
+	Score      float64                `json:"score"`
+	MemoryType MemoryType             `json:"memory_type"`
+	Tags       []string               `json:"tags"`
+	Metadata   map[string]interface{} `json:"metadata"`
+	CreatedAt  time.Time              `json:"created_at"`
 }
 
 // BranchInfo describes a memory branch.
@@ -82,10 +87,10 @@ type ReflectJob struct {
 
 // AgentProfile holds the learned profile for an agent.
 type AgentProfile struct {
-	Preferences  map[string]interface{} `json:"preferences"`
-	Facts        map[string]interface{} `json:"facts"`
-	MemoryCount  int                    `json:"memory_count"`
-	LastUpdatedAt time.Time             `json:"last_updated_at"`
+	Preferences   map[string]interface{} `json:"preferences"`
+	Facts         map[string]interface{} `json:"facts"`
+	MemoryCount   int                    `json:"memory_count"`
+	LastUpdatedAt time.Time              `json:"last_updated_at"`
 }
 
 // RememberOptions are optional parameters for storing a memory.

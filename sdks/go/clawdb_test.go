@@ -32,8 +32,8 @@ func TestFromAPIKey(t *testing.T) {
 }
 
 func TestMemory_RememberEmpty(t *testing.T) {
-	db, _ := clawdb.New(clawdb.WithEndpoint("http://localhost:50050"))
-	_, err := db.Memory().Remember(context.Background(), "", nil)
+	db, _ := clawdb.New(clawdb.Options{Endpoint: "http://localhost:50050"})
+	_, err := db.Memory.Remember(context.Background(), "", nil)
 	assert.Error(t, err)
 	cErr, ok := err.(*clawdb.ClawDBError)
 	require.True(t, ok)
@@ -42,13 +42,13 @@ func TestMemory_RememberEmpty(t *testing.T) {
 
 func TestMemory_SearchTopKExceeded(t *testing.T) {
 	db, _ := clawdb.New()
-	_, err := db.Memory().Search(context.Background(), "query", &clawdb.SearchOptions{TopK: 101})
+	_, err := db.Memory.Search(context.Background(), "query", &clawdb.SearchOptions{TopK: 101})
 	assert.Error(t, err)
 }
 
 func TestMemory_RecallEmpty(t *testing.T) {
 	db, _ := clawdb.New()
-	_, err := db.Memory().Recall(context.Background(), []string{})
+	_, err := db.Memory.Recall(context.Background(), []string{})
 	assert.Error(t, err)
 }
 

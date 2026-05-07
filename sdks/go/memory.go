@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // MemoryClient provides memory operations.
@@ -85,7 +83,7 @@ func (m *MemoryClient) Remember(ctx context.Context, content string, opts *Remem
 }
 
 // Search searches memories semantically.
-func (m *MemoryClient) Search(ctx context.Context, query string, opts *SearchOptions) ([]SearchResult, error) {
+func (m *MemoryClient) Search(ctx context.Context, query string, opts *SearchOptions) ([]SearchHit, error) {
 	topK := 5
 	alpha := 0.7
 	semantic := true
@@ -108,13 +106,13 @@ func (m *MemoryClient) Search(ctx context.Context, query string, opts *SearchOpt
 		return nil, err
 	}
 	raw, _ := json.Marshal(out["results"])
-	var results []SearchResult
+	var results []SearchHit
 	_ = json.Unmarshal(raw, &results)
 	return results, nil
 }
 
 // Recall retrieves specific memories by ID.
-func (m *MemoryClient) Recall(ctx context.Context, memoryIDs []string) ([]MemoryRecord, error) {
+func (m *MemoryClient) Recall(ctx context.Context, memoryIDs []string) ([]SearchHit, error) {
 	if len(memoryIDs) == 0 {
 		return nil, &ClawDBError{Code: ErrorCodeValidation, Message: "memory_ids must be non-empty"}
 	}
@@ -123,7 +121,7 @@ func (m *MemoryClient) Recall(ctx context.Context, memoryIDs []string) ([]Memory
 		return nil, err
 	}
 	raw, _ := json.Marshal(out["memories"])
-	var memories []MemoryRecord
+	var memories []SearchHit
 	_ = json.Unmarshal(raw, &memories)
 	return memories, nil
 }

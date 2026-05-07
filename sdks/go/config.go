@@ -39,6 +39,9 @@ func LoadConfig() *Config {
 	if v := os.Getenv("CLAWDB_ENDPOINT"); v != "" {
 		cfg.Endpoint = v
 	}
+	if v := os.Getenv("CLAWDB_URL"); v != "" {
+		cfg.Endpoint = v
+	}
 	if v := os.Getenv("CLAWDB_API_KEY"); v != "" {
 		cfg.APIKey = v
 	}

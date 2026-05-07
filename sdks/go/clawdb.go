@@ -10,30 +10,46 @@
 package clawdb
 
 // Version is the current SDK version.
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 // ClawDB is the top-level client.
 type ClawDB struct {
 	cfg     *Config
 	session *Session
 
-	memory   *MemoryClient
-	branches *BranchesClient
-	sync     *SyncClient
-	reflect  *ReflectClient
+	Memory        *MemoryClient
+	Branch        *BranchesClient
+	Sync          *SyncClient
+	Reflect       *ReflectClient
+	SessionClient *SessionClient
+	Health        *HealthClient
 }
 
-// New creates a ClawDB client with the given options.
-func New(opts ...Option) (*ClawDB, error) {
+// New creates a ClawDB client from an optional Options struct or functional options.
+func New(args ...interface{}) (*ClawDB, error) {
 	cfg := LoadConfig()
-	for _, o := range opts {
-		o(cfg)
+	for _, arg := range args {
+		switch value := arg.(type) {
+		case Option:
+			value(cfg)
+		case Options:
+			applyOptionsStruct(cfg, value)
+		case *Options:
+			if value != nil {
+				applyOptionsStruct(cfg, *value)
+			}
+		}
+	}
+	if err := autoProvisionEndpoint(cfg); err != nil {
+		return nil, err
 	}
 	db := &ClawDB{cfg: cfg}
-	db.memory = newMemoryClient(cfg, db.session)
-	db.branches = newBranchesClient(cfg, db.session)
-	db.sync = newSyncClient(cfg, db.session)
-	db.reflect = newReflectClient(cfg, db.session)
+	db.Memory = newMemoryClient(cfg, db.session)
+	db.Branch = newBranchesClient(cfg, db.session)
+	db.Sync = newSyncClient(cfg, db.session)
+	db.Reflect = newReflectClient(cfg, db.session)
+	db.SessionClient = newSessionClient(cfg, db.session)
+	db.Health = newHealthClient(cfg)
 	return db, nil
 }
 
@@ -44,20 +60,20 @@ func FromEnv() (*ClawDB, error) {
 
 // FromAPIKey creates a ClawDB client with an explicit API key and endpoint.
 func FromAPIKey(apiKey, endpoint string) (*ClawDB, error) {
-	return New(WithAPIKey(apiKey), WithEndpoint(endpoint))
+	return New(Options{APIKey: apiKey, Endpoint: endpoint})
 }
 
 // Memory returns the MemoryClient.
-func (db *ClawDB) Memory() *MemoryClient { return db.memory }
+func (db *ClawDB) MemoryClient() *MemoryClient { return db.Memory }
 
 // Branches returns the BranchesClient.
-func (db *ClawDB) Branches() *BranchesClient { return db.branches }
+func (db *ClawDB) Branches() *BranchesClient { return db.Branch }
 
 // Sync returns the SyncClient.
-func (db *ClawDB) Sync() *SyncClient { return db.sync }
+func (db *ClawDB) SyncClient() *SyncClient { return db.Sync }
 
 // Reflect returns the ReflectClient.
-func (db *ClawDB) Reflect() *ReflectClient { return db.reflect }
+func (db *ClawDB) ReflectClient() *ReflectClient { return db.Reflect }
 
 // Close releases any held resources.
 func (db *ClawDB) Close() {}

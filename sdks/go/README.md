@@ -1,10 +1,20 @@
 # clawdb (Go SDK)
 
-The official Go client for **ClawDB** — persistent, branchable, semantically-searchable agent memory.
+The official Go client for **ClawDB**.
+
+This package is a gRPC client to `clawdb-server`. It does not embed the Rust runtime directly into your Go process.
 
 ```bash
 go get github.com/Claw-DB/claw-sdk/sdks/go
 ```
+
+For local usage, start `clawdb-server` first. The expected zero-config path is:
+
+```bash
+npx @clawdb/cli@latest init
+```
+
+If you already have a local or hosted deployment, set the endpoint explicitly.
 
 ## Quick start
 
@@ -80,6 +90,12 @@ db.Branches.Merge(ctx, "my-experiment", &clawdb.MergeOptions{
 | `TimeoutMs` | `CLAWDB_TIMEOUT_MS` | Request timeout |
 
 Use `clawdb.NewFromEnv()` to read from environment variables automatically.
+
+## Runtime model
+
+- Go talks to `clawdb-server` over gRPC.
+- `clawdb-server` hosts the Rust runtime and storage engine.
+- For cloud usage, point `CLAWDB_ENDPOINT` at the managed endpoint and supply `CLAWDB_API_KEY`.
 
 ## Docs
 

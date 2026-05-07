@@ -18,7 +18,7 @@ func main() {
 	ctx := context.Background()
 
 	// Store a memory
-	id, err := db.Memory().Remember(ctx, "The user prefers concise answers", &clawdb.RememberOptions{
+	id, err := db.Memory.Remember(ctx, "The user prefers concise answers", &clawdb.RememberOptions{
 		MemoryType: clawdb.MemoryTypeContext,
 		Tags:       []string{"preferences"},
 	})
@@ -28,11 +28,11 @@ func main() {
 	fmt.Printf("Stored memory: %s\n", id)
 
 	// Search semantically
-	results, err := db.Memory().Search(ctx, "user preferences", &clawdb.SearchOptions{TopK: 5, Semantic: true})
+	results, err := db.Memory.Search(ctx, "user preferences", &clawdb.SearchOptions{TopK: 5, Semantic: true})
 	if err != nil {
 		log.Fatal(err)
 	}
 	for _, r := range results {
-		fmt.Printf("  [%.2f] %s\n", r.Score, r.Memory.Content)
+		fmt.Printf("  [%.2f] %s\n", r.Score, r.Content)
 	}
 }
