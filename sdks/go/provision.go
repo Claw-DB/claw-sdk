@@ -100,7 +100,14 @@ func localServerHealthy() bool {
 }
 
 func spawnLocalServer(binary string) error {
-	cmd := exec.Command(binary, "--port", "50050")
+	cmd := exec.Command(binary, "--grpc-port", "50050")
+	cmd.Env = os.Environ()
+	if os.Getenv("CLAW_GUARD_JWT_SECRET") == "" {
+		cmd.Env = append(cmd.Env, "CLAW_GUARD_JWT_SECRET=clawdb-sdk-local-dev-secret")
+	}
+	if os.Getenv("CLAW_VECTOR_ENABLED") == "" {
+		cmd.Env = append(cmd.Env, "CLAW_VECTOR_ENABLED=false")
+	}
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	return cmd.Start()

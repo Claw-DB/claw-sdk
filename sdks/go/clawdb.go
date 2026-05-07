@@ -10,7 +10,7 @@
 package clawdb
 
 // Version is the current SDK version.
-const Version = "0.1.2"
+const Version = "0.1.3"
 
 // ClawDB is the top-level client.
 type ClawDB struct {

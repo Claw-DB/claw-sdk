@@ -2,6 +2,7 @@ packages:
   - "sdks/typescript"
   - "packages/cli"
   - "sdks/mcp-adapter"
+  - "tests/integration"
   - "adapters/langchain"
   - "adapters/openai"
   - "adapters/openclaw"

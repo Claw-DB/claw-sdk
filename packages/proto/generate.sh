@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROTO_DIR="$ROOT_DIR/proto"
 GENERATED_DIR="$ROOT_DIR/src/generated"
-PRIMARY_PROTO_URL="https://raw.githubusercontent.com/Claw-DB/ClawDB/main/clawdb/proto/clawdb.proto"
-FALLBACK_PROTO_URL="https://raw.githubusercontent.com/Claw-DB/ClawDB/main/clawdb-server/proto/clawdb.proto"
+PRIMARY_PROTO_URL="https://raw.githubusercontent.com/Claw-DB/ClawDB/main/clawdb-server/proto/clawdb.proto"
+FALLBACK_PROTO_URL="https://raw.githubusercontent.com/Claw-DB/ClawDB/main/clawdb/proto/clawdb.proto"
 
 mkdir -p "$PROTO_DIR" "$GENERATED_DIR"
 

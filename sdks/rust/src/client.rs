@@ -1,6 +1,10 @@
+use std::fs;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 
+use dirs::home_dir;
 use reqwest::{Client as HttpClient, header};
 use serde_json::{json, Value};
 use tracing::info;
@@ -21,6 +25,90 @@ struct ClawDBInner {
     agent_id: String,
     timeout_ms: u64,
     http: HttpClient,
+}
+
+const LOCAL_ENDPOINT: &str = "http://localhost:50050";
+const LOCAL_SOCKET: &str = "127.0.0.1:50050";
+const DEFAULT_LOCAL_JWT_SECRET: &str = "clawdb-sdk-local-dev-secret";
+
+async fn local_server_healthy() -> bool {
+    tokio::net::TcpStream::connect(LOCAL_SOCKET).await.is_ok()
+}
+
+async fn wait_for_local_server(timeout: Duration) -> bool {
+    let started = tokio::time::Instant::now();
+    while started.elapsed() < timeout {
+        if local_server_healthy().await {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+fn installed_binary_path() -> Option<PathBuf> {
+    let binary = if cfg!(windows) {
+        "clawdb-server.exe"
+    } else {
+        "clawdb-server"
+    };
+
+    home_dir().map(|home| home.join(".clawdb").join("bin").join(binary))
+}
+
+fn persist_server_pid(pid: u32) {
+    if let Some(home) = home_dir() {
+        let claw_dir = home.join(".clawdb");
+        let _ = fs::create_dir_all(&claw_dir);
+        let _ = fs::write(claw_dir.join("server.pid"), pid.to_string());
+    }
+}
+
+fn spawn_local_server(binary: impl AsRef<std::ffi::OsStr>) -> bool {
+    let mut command = Command::new(binary);
+    command
+        .arg("--grpc-port")
+        .arg("50050")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if std::env::var_os("CLAW_GUARD_JWT_SECRET").is_none() {
+        command.env("CLAW_GUARD_JWT_SECRET", DEFAULT_LOCAL_JWT_SECRET);
+    }
+    if std::env::var_os("CLAW_VECTOR_ENABLED").is_none() {
+        command.env("CLAW_VECTOR_ENABLED", "false");
+    }
+
+    match command.spawn() {
+        Ok(child) => {
+            persist_server_pid(child.id());
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+async fn ensure_local_server_available() -> SdkResult<String> {
+    if local_server_healthy().await {
+        return Ok(LOCAL_ENDPOINT.into());
+    }
+
+    if spawn_local_server("clawdb-server") && wait_for_local_server(Duration::from_secs(5)).await {
+        return Ok(LOCAL_ENDPOINT.into());
+    }
+
+    if let Some(installed_binary) = installed_binary_path() {
+        if installed_binary.exists()
+            && spawn_local_server(&installed_binary)
+            && wait_for_local_server(Duration::from_secs(5)).await
+        {
+            return Ok(LOCAL_ENDPOINT.into());
+        }
+    }
+
+    Err(SdkError::Config(
+        "could not auto-provision clawdb-server; install clawdb-server or set CLAWDB_URL/CLAWDB_API_KEY".into(),
+    ))
 }
 
 // ─── ClawDB client ─────────────────────────────────────────────────────────
@@ -54,13 +142,12 @@ impl ClawDB {
                 .build()
                 .await;
         }
-        if tokio::net::TcpStream::connect("127.0.0.1:50050").await.is_ok() {
-            return ClawDBBuilder::from_env()
-                .endpoint("http://localhost:50050")
-                .build()
-                .await;
-        }
-        Err(SdkError::Config("could not auto-provision clawdb-server".into()))
+        let endpoint = ensure_local_server_available().await?;
+
+        ClawDBBuilder::from_env()
+            .endpoint(endpoint)
+            .build()
+            .await
     }
 
     /// Create a client from an API key and endpoint.

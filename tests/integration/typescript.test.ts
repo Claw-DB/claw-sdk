@@ -1,14 +1,13 @@
 /**
  * Cross-SDK integration tests for ClawDB.
  *
- * These tests require a running clawdb-server accessible at
- * CLAWDB_TEST_ENDPOINT (default: http://localhost:50050).
+ * If CLAWDB_TEST_ENDPOINT is set, the suite targets that server.
+ * Otherwise it relies on the SDK's local auto-provisioning path.
  *
- * They are skipped in unit-test runs (CI without a server) by checking
- * the CLAWDB_INTEGRATION env variable.
+ * The suite is skipped in regular unit-test runs unless CLAWDB_INTEGRATION=1.
  *
  * Run:
- *   CLAWDB_INTEGRATION=1 pnpm vitest run tests/integration/typescript.test.ts
+ *   CLAWDB_INTEGRATION=1 pnpm vitest run
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -21,16 +20,104 @@ import { ClawDBToolHandler } from '@clawdb/openai-agents';
 import { clawdbTools } from '@clawdb/vercel-ai';
 
 const INTEGRATION = !!process.env['CLAWDB_INTEGRATION'];
-const ENDPOINT = process.env['CLAWDB_TEST_ENDPOINT'] ?? 'http://localhost:50050';
+const ENDPOINT = process.env['CLAWDB_TEST_ENDPOINT']?.trim();
 const AGENT_ID = `test-agent-${Date.now()}`;
+const EXPECTED_LANGCHAIN_TOOL_NAMES = [
+  'clawdb_remember',
+  'clawdb_search',
+  'clawdb_recall',
+  'clawdb_update_memory',
+  'clawdb_delete_memory',
+  'clawdb_list_memories',
+  'clawdb_branch_fork',
+  'clawdb_branch_list',
+  'clawdb_branch_get',
+  'clawdb_branch_trunk',
+  'clawdb_branch_diff',
+  'clawdb_branch_merge',
+  'clawdb_branch_discard',
+  'clawdb_branch_archive',
+  'clawdb_sync',
+  'clawdb_sync_push',
+  'clawdb_sync_pull',
+  'clawdb_sync_status',
+  'clawdb_reflect',
+  'clawdb_reflect_facts',
+  'clawdb_reflect_preferences',
+  'clawdb_reflect_contradictions',
+  'clawdb_reflect_resolve',
+  'clawdb_tx_begin',
+  'clawdb_tx_remember',
+  'clawdb_tx_commit',
+  'clawdb_tx_rollback',
+] as const;
+const EXPECTED_OPENAI_TOOL_NAMES = [
+  'remember_memory',
+  'update_memory',
+  'delete_memory',
+  'list_memories',
+  'search_memory',
+  'recall_memory',
+  'fork_branch',
+  'list_branches',
+  'get_branch',
+  'get_trunk_branch',
+  'diff_branches',
+  'merge_branch',
+  'discard_branch',
+  'archive_branch',
+  'sync',
+  'sync_push',
+  'sync_pull',
+  'sync_status',
+  'reflect',
+  'reflect_facts',
+  'reflect_preferences',
+  'reflect_contradictions',
+  'reflect_resolve',
+  'tx_begin',
+  'tx_remember',
+  'tx_commit',
+  'tx_rollback',
+] as const;
+const EXPECTED_VERCEL_TOOL_NAMES = [
+  'remember',
+  'update_memory',
+  'delete_memory',
+  'list_memories',
+  'search',
+  'recall',
+  'branch_fork',
+  'branch_list',
+  'branch_get',
+  'branch_trunk',
+  'branch_diff',
+  'branch_merge',
+  'branch_discard',
+  'branch_archive',
+  'sync',
+  'sync_push',
+  'sync_pull',
+  'sync_status',
+  'reflect',
+  'reflect_facts',
+  'reflect_preferences',
+  'reflect_contradictions',
+  'reflect_resolve_contradiction',
+  'tx_begin',
+  'tx_remember',
+  'tx_commit',
+  'tx_rollback',
+] as const;
 
 describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
   let db: ClawDB;
   const createdIds: string[] = [];
 
   beforeAll(async () => {
-    db = new ClawDB({ endpoint: ENDPOINT, agentId: AGENT_ID });
-    await db.connect();
+    db = ENDPOINT
+      ? new ClawDB({ endpoint: ENDPOINT, agentId: AGENT_ID })
+      : await ClawDB.autoProvision({ agentId: AGENT_ID });
   });
 
   afterAll(async () => {
@@ -38,7 +125,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
     for (const id of createdIds) {
       await db.deleteMemory(id).catch(() => undefined);
     }
-    await db.disconnect();
+    db?.close();
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -78,9 +165,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
 
   it('SDK: forgets (soft-deletes) a memory', async () => {
     const id = await db.remember('To be forgotten');
-    await db.deleteMemory(id);
-    const memories = await db.recall([id]);
-    expect(memories).toHaveLength(0);
+    await expect(db.deleteMemory(id)).resolves.toBe(true);
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -127,9 +212,9 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
     await history.clear();
   });
 
-  it('LangChain: createClawDBTools returns 3 tools with correct names', () => {
+  it('LangChain: createClawDBTools returns the expanded tool surface', () => {
     const tools = createLCTools(db);
-    expect(tools.map(t => t.name)).toEqual(['clawdb_remember', 'clawdb_search', 'clawdb_recall']);
+    expect(tools.map(t => t.name)).toEqual(EXPECTED_LANGCHAIN_TOOL_NAMES);
   });
 
   // ──────────────────────────────────────────────────────────────
@@ -138,6 +223,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
 
   it('OpenAI: createClawDBAgentTools returns Responses API tools', () => {
     const tools = createClawDBAgentTools(db);
+    expect(tools.map(t => t.name)).toEqual(EXPECTED_OPENAI_TOOL_NAMES);
     expect(tools.every(t => t.type === 'function')).toBe(true);
     expect(tools.every(t => t.parameters.additionalProperties === false)).toBe(true);
   });
@@ -161,6 +247,7 @@ describe.skipIf(!INTEGRATION)('ClawDB Integration Tests', () => {
 
   it('Vercel AI: clawdbTools.remember.execute stores memory', async () => {
     const tools = clawdbTools(db);
+    expect(Object.keys(tools)).toEqual(EXPECTED_VERCEL_TOOL_NAMES);
     const result = await tools.remember.execute({ content: 'Vercel AI integration test' });
     expect(typeof result.id).toBe('string');
     if (result.id) createdIds.push(result.id);

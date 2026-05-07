@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import * as grpc from '@grpc/grpc-js';
+import * as protoLoader from '@grpc/proto-loader';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ type UnaryOptions = {
 };
 
 type RawClient = grpc.Client;
+type LoadedServiceClientConstructor = new (address: string, credentials: grpc.ChannelCredentials) => RawClient;
 
 const RETRYABLE = new Set<number>([
   grpc.status.UNAVAILABLE,
@@ -160,8 +162,12 @@ const LOCAL_ENDPOINT = 'http://127.0.0.1:50050';
 const CLOUD_ENDPOINT = 'https://cloud.clawdb.dev';
 const SERVICE = 'clawdb.v1.ClawDBService';
 const DEFAULT_SERVER_RELEASE_VERSION = '0.1.9';
+const DEFAULT_LOCAL_JWT_SECRET = 'clawdb-sdk-local-dev-secret';
+const DEFAULT_SESSION_SCOPES = ['*'];
+const PROTO_PATH = resolve(__dirname, '../proto/clawdb.proto');
 
 const channelPool = new Map<string, RawClient>();
+let serviceClientConstructor: LoadedServiceClientConstructor | undefined;
 
 function debugEnabled(): boolean {
   return process.env.CLAWDB_DEBUG === '1';
@@ -183,6 +189,25 @@ function normalizeEndpoint(endpoint: string): string {
   return endpoint;
 }
 
+function deriveLocalHttpEndpoint(endpoint: string): string | undefined {
+  try {
+    const url = new URL(endpoint);
+    if (!['localhost', '127.0.0.1'].includes(url.hostname)) {
+      return undefined;
+    }
+    if (url.port && url.port !== '50050') {
+      return undefined;
+    }
+    url.port = '8080';
+    url.pathname = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/u, '');
+  } catch {
+    return undefined;
+  }
+}
+
 function credentialsForEndpoint(endpoint: string): grpc.ChannelCredentials {
   return endpoint.startsWith('https://')
     ? grpc.credentials.createSsl()
@@ -195,9 +220,38 @@ function getOrCreateClient(endpoint: string): RawClient {
   if (found) {
     return found;
   }
-  const client = new grpc.Client(normalizeEndpoint(endpoint), credentialsForEndpoint(endpoint));
+  const client = new (getServiceClientConstructor())(normalizeEndpoint(endpoint), credentialsForEndpoint(endpoint));
   channelPool.set(key, client);
   return client;
+}
+
+function getServiceClientConstructor(): LoadedServiceClientConstructor {
+  if (serviceClientConstructor) {
+    return serviceClientConstructor;
+  }
+
+  const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+    keepCase: true,
+    longs: String,
+    enums: String,
+    defaults: true,
+    oneofs: true,
+    bytes: Buffer,
+  });
+  const grpcPackage = grpc.loadPackageDefinition(packageDefinition) as {
+    clawdb?: {
+      v1?: {
+        ClawDBService?: LoadedServiceClientConstructor;
+      };
+    };
+  };
+  const constructor = grpcPackage.clawdb?.v1?.ClawDBService;
+  if (!constructor) {
+    throw new Error(`Unable to load ClawDB gRPC service from ${PROTO_PATH}`);
+  }
+
+  serviceClientConstructor = constructor;
+  return constructor;
 }
 
 function parseDate(value: unknown): Date {
@@ -217,19 +271,45 @@ function parseDate(value: unknown): Date {
   return new Date();
 }
 
-function encodeJson(payload: unknown): Buffer {
-  return Buffer.from(JSON.stringify(payload), 'utf8');
-}
+function parseBranchPayload(payload: Record<string, unknown>): { branchId: string; name: string; branchJson: string } {
+  const branchJson = String(payload.branch_json ?? payload.branchJson ?? '');
+  let parsed: Record<string, unknown> = {};
 
-function decodeJson(buffer: Buffer): unknown {
-  if (buffer.length === 0) {
-    return {};
+  if (branchJson) {
+    try {
+      parsed = JSON.parse(branchJson) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
   }
-  return JSON.parse(buffer.toString('utf8')) as unknown;
+
+  return {
+    branchId: String(payload.branch_id ?? payload.branchId ?? parsed.branch_id ?? parsed.branchId ?? ''),
+    name: String(payload.name ?? parsed.name ?? ''),
+    branchJson,
+  };
 }
 
-function grpcMethodPath(method: string): string {
-  return `/${SERVICE}/${method}`;
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function toStableSessionAgentId(agentId: string): string {
+  if (isUuidLike(agentId)) {
+    return agentId;
+  }
+
+  const hex = createHash('sha256').update(agentId).digest('hex').slice(0, 32).split('');
+  hex[12] = '5';
+  hex[16] = ((Number.parseInt(hex[16] ?? '0', 16) & 0x3) | 0x8).toString(16);
+  const normalized = hex.join('');
+  return [
+    normalized.slice(0, 8),
+    normalized.slice(8, 12),
+    normalized.slice(12, 16),
+    normalized.slice(16, 20),
+    normalized.slice(20, 32),
+  ].join('-');
 }
 
 function toClawError(error: unknown): ClawDBError {
@@ -459,7 +539,12 @@ function startDetachedServer(binaryPath: string): Promise<number> {
   return new Promise<number>((resolveStart, rejectStart) => {
     const child = spawn(binaryPath, ['--grpc-port', '50050'], {
       detached: true,
-      stdio: 'ignore'
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        CLAW_GUARD_JWT_SECRET: process.env.CLAW_GUARD_JWT_SECRET ?? DEFAULT_LOCAL_JWT_SECRET,
+        CLAW_VECTOR_ENABLED: process.env.CLAW_VECTOR_ENABLED ?? 'false'
+      }
     });
 
     child.once('error', (error) => {
@@ -500,7 +585,7 @@ async function ensureLocalServerAvailable(): Promise<string> {
     const pid = await startDetachedServer('clawdb-server');
     mkdirSync(join(homedir(), '.clawdb'), { recursive: true });
     writeFileSync(join(homedir(), '.clawdb', 'server.pid'), String(pid), 'utf8');
-    if (await waitForHealth(LOCAL_ENDPOINT, 5_000)) {
+    if (await waitForHealth(LOCAL_ENDPOINT, 20_000)) {
       return LOCAL_ENDPOINT;
     }
   } catch {
@@ -576,8 +661,8 @@ async function ensureLocalServerAvailable(): Promise<string> {
   mkdirSync(resolve(homedir(), '.clawdb'), { recursive: true });
   writeFileSync(join(homedir(), '.clawdb', 'server.pid'), String(pid), 'utf8');
 
-  if (!(await waitForHealth(LOCAL_ENDPOINT, 5_000))) {
-    throw new Error('clawdb-server did not become healthy within 5 seconds');
+  if (!(await waitForHealth(LOCAL_ENDPOINT, 20_000))) {
+    throw new Error('clawdb-server did not become healthy within 20 seconds');
   }
 
   return LOCAL_ENDPOINT;
@@ -606,6 +691,8 @@ export class ClawDB extends EventEmitter {
   private readonly skipLocalBootstrap: boolean;
   private shouldWatchConnectivity = true;
   private localBootstrapPromise?: Promise<void>;
+  private sessionToken?: string;
+  private sessionBootstrapPromise?: Promise<void>;
 
   constructor(config: ClawDBConfig = {}) {
     super();
@@ -646,12 +733,13 @@ export class ClawDB extends EventEmitter {
     scopes?: string[];
     ttlSecs?: number;
   } = {}): Promise<SessionInfo> {
-    const r = await this.unaryCall<Record<string, unknown>>('CreateSession', {
-      agent_id: opts.agentId ?? this.agentId,
-      role: opts.role ?? '',
-      scopes: opts.scopes ?? [],
-      ttl_secs: opts.ttlSecs ?? 0,
+    const r = await this.bootstrapSession({
+      agentId: opts.agentId ?? this.agentId,
+      role: opts.role ?? 'assistant',
+      scopes: opts.scopes ?? DEFAULT_SESSION_SCOPES,
+      ttlSecs: opts.ttlSecs ?? 0,
     });
+    this.sessionToken = String(r.token ?? '');
     return {
       id: String(r.id ?? ''),
       token: String(r.token ?? ''),
@@ -676,6 +764,7 @@ export class ClawDB extends EventEmitter {
 
   async revokeSession(sessionId: string): Promise<boolean> {
     const r = await this.unaryCall<Record<string, unknown>>('RevokeSession', { session_id: sessionId });
+    this.sessionToken = undefined;
     return Boolean(r.revoked);
   }
 
@@ -779,29 +868,25 @@ export class ClawDB extends EventEmitter {
   async getBranch(branchId: string): Promise<BranchInfo> {
     const r = await this.unaryCall<Record<string, unknown>>('GetBranch', { branch_id: branchId });
     const b = (r.branch as Record<string, unknown>) ?? {};
-    return { branchId: String(b.branch_id ?? b.branchId ?? ''), name: String((b as Record<string, unknown>).name ?? ''), branchJson: String(b.branch_json ?? b.branchJson ?? '') };
+    return parseBranchPayload(b);
   }
 
   async getBranchByName(name: string): Promise<BranchInfo> {
     const r = await this.unaryCall<Record<string, unknown>>('GetBranchByName', { name });
     const b = (r.branch as Record<string, unknown>) ?? {};
-    return { branchId: String(b.branch_id ?? b.branchId ?? ''), name: String((b as Record<string, unknown>).name ?? ''), branchJson: String(b.branch_json ?? b.branchJson ?? '') };
+    return parseBranchPayload(b);
   }
 
   async getTrunkBranch(): Promise<BranchInfo> {
     const r = await this.unaryCall<Record<string, unknown>>('GetTrunkBranch', {});
     const b = (r.branch as Record<string, unknown>) ?? {};
-    return { branchId: String(b.branch_id ?? b.branchId ?? ''), name: String((b as Record<string, unknown>).name ?? ''), branchJson: String(b.branch_json ?? b.branchJson ?? '') };
+    return parseBranchPayload(b);
   }
 
   async listBranches(): Promise<BranchInfo[]> {
     const r = await this.unaryCall<Record<string, unknown>>('ListBranches', {});
     const branches = (Array.isArray(r.branches) ? r.branches : []) as Array<Record<string, unknown>>;
-    return branches.map((b) => ({
-      branchId: String(b.branch_id ?? b.branchId ?? ''),
-      name: String((b as Record<string, unknown>).name ?? ''),
-      branchJson: String(b.branch_json ?? b.branchJson ?? ''),
-    }));
+    return branches.map(parseBranchPayload);
   }
 
   async discardBranch(branchId: string): Promise<boolean> {
@@ -1005,6 +1090,7 @@ export class ClawDB extends EventEmitter {
 
   close(): void {
     this.shouldWatchConnectivity = false;
+    this.sessionToken = undefined;
   }
 
   private usesDefaultLocalEndpoint(): boolean {
@@ -1036,10 +1122,89 @@ export class ClawDB extends EventEmitter {
     if (this.workspaceId) {
       metadata.set('x-workspace-id', this.workspaceId);
     }
+    if (this.sessionToken) {
+      metadata.set('x-claw-session', this.sessionToken);
+    }
     if (this.apiKey) {
       metadata.set('authorization', `Bearer ${this.apiKey}`);
     }
     return metadata;
+  }
+
+  private requiresSession(method: string): boolean {
+    return method !== 'Health' && method !== 'CreateSession';
+  }
+
+  private async bootstrapSession(opts: {
+    agentId: string;
+    role: string;
+    scopes: string[];
+    ttlSecs: number;
+  }): Promise<Record<string, unknown>> {
+    const localHttpEndpoint = deriveLocalHttpEndpoint(this.endpoint);
+    if (localHttpEndpoint) {
+      const response = await fetch(`${localHttpEndpoint}/v1/sessions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          agent_id: toStableSessionAgentId(opts.agentId),
+          role: opts.role,
+          scopes: opts.scopes,
+          ttl_secs: opts.ttlSecs,
+        }),
+      });
+
+      const rawBody = await response.text();
+      const body = (() => {
+        if (!rawBody) {
+          return {} as Record<string, unknown>;
+        }
+        try {
+          return JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          return { message: rawBody } as Record<string, unknown>;
+        }
+      })();
+      if (!response.ok) {
+        throw new ClawDBAuthError(String(body.message ?? body.error ?? 'Session bootstrap failed'), grpc.status.UNAUTHENTICATED);
+      }
+      return body;
+    }
+
+    return this.unaryCallOnce<Record<string, unknown>>(
+      'CreateSession',
+      {
+        agent_id: opts.agentId,
+        role: opts.role,
+        scopes: opts.scopes,
+        ttl_secs: opts.ttlSecs,
+      },
+      { timeoutMs: this.timeoutMs }
+    );
+  }
+
+  private async ensureSession(method: string): Promise<void> {
+    if (!this.requiresSession(method) || this.sessionToken) {
+      return;
+    }
+
+    if (!this.sessionBootstrapPromise) {
+      this.sessionBootstrapPromise = (async () => {
+        const session = await this.bootstrapSession({
+          agentId: this.agentId,
+          role: 'assistant',
+          scopes: DEFAULT_SESSION_SCOPES,
+          ttlSecs: 0,
+        });
+        this.sessionToken = String(session.token ?? '');
+      })().finally(() => {
+        this.sessionBootstrapPromise = undefined;
+      });
+    }
+
+    await this.sessionBootstrapPromise;
   }
 
   private async unaryCall<TRes = unknown>(
@@ -1048,6 +1213,7 @@ export class ClawDB extends EventEmitter {
     options: UnaryOptions = {}
   ): Promise<TRes> {
     await this.ensureEndpointReady();
+    await this.ensureSession(method);
 
     const maxAttempts = Math.max(1, this.maxRetries);
     let attempt = 0;
@@ -1080,11 +1246,19 @@ export class ClawDB extends EventEmitter {
   ): Promise<TRes> {
     return new Promise<TRes>((resolveCall, rejectCall) => {
       const deadline = new Date(Date.now() + (options.timeoutMs ?? this.timeoutMs));
+      const clientMethod = (this.client as unknown as Record<string, unknown>)[method];
+      if (typeof clientMethod !== 'function') {
+        rejectCall(new ClawDBError(`Unknown gRPC method: ${method}`, grpc.status.INTERNAL));
+        return;
+      }
 
-      const call = this.client.makeUnaryRequest(
-        grpcMethodPath(method),
-        encodeJson,
-        decodeJson,
+      const call = (clientMethod as (
+        request: Record<string, unknown>,
+        metadata: grpc.Metadata,
+        options: { deadline: Date },
+        callback: (error: grpc.ServiceError | null, response: unknown) => void
+      ) => grpc.ClientUnaryCall).call(
+        this.client,
         payload,
         this.metadata(),
         { deadline },

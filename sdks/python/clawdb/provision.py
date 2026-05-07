@@ -108,8 +108,12 @@ def _extract_binary(archive_path: Path) -> Path:
 
 
 def _spawn_local_server(binary: str | Path) -> None:
+    env = os.environ.copy()
+    env.setdefault('CLAW_GUARD_JWT_SECRET', 'clawdb-sdk-local-dev-secret')
+    env.setdefault('CLAW_VECTOR_ENABLED', 'false')
     subprocess.Popen(
-        [str(binary), '--port', '50050'],
+        [str(binary), '--grpc-port', '50050'],
+        env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,

@@ -4,6 +4,36 @@ import { createClawDBAgentTools } from '../tools/index.js';
 import { ClawDBToolHandler } from '../handlers/index.js';
 import { withClawDBMemory } from '../middleware/index.js';
 
+const EXPECTED_TOOL_NAMES = [
+  'remember_memory',
+  'update_memory',
+  'delete_memory',
+  'list_memories',
+  'search_memory',
+  'recall_memory',
+  'fork_branch',
+  'list_branches',
+  'get_branch',
+  'get_trunk_branch',
+  'diff_branches',
+  'merge_branch',
+  'discard_branch',
+  'archive_branch',
+  'sync',
+  'sync_push',
+  'sync_pull',
+  'sync_status',
+  'reflect',
+  'reflect_facts',
+  'reflect_preferences',
+  'reflect_contradictions',
+  'reflect_resolve',
+  'tx_begin',
+  'tx_remember',
+  'tx_commit',
+  'tx_rollback'
+] as const;
+
 function makeMockDb() {
   return {
     rememberTyped: vi.fn().mockResolvedValue('mem-id-1'),
@@ -27,13 +57,7 @@ function makeMockDb() {
 describe('openai adapter', () => {
   it('creates required OpenAI tools', () => {
     const tools = createClawDBAgentTools(makeMockDb(), { enableBranching: true });
-    expect(tools.map((t) => t.name)).toEqual([
-      'remember_memory',
-      'search_memory',
-      'recall_memory',
-      'fork_branch',
-      'merge_branch'
-    ]);
+    expect(tools.map((t) => t.name)).toEqual(EXPECTED_TOOL_NAMES);
   });
 
   it('handler dispatches remember tool', async () => {

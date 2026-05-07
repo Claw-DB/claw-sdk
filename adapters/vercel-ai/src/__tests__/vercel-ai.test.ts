@@ -3,6 +3,36 @@ import { describe, expect, it, vi } from 'vitest';
 import { clawdbTools } from '../tools/index.js';
 import { clawdbMiddleware } from '../middleware/index.js';
 
+const EXPECTED_TOOL_NAMES = [
+  'remember',
+  'update_memory',
+  'delete_memory',
+  'list_memories',
+  'search',
+  'recall',
+  'branch_fork',
+  'branch_list',
+  'branch_get',
+  'branch_trunk',
+  'branch_diff',
+  'branch_merge',
+  'branch_discard',
+  'branch_archive',
+  'sync',
+  'sync_push',
+  'sync_pull',
+  'sync_status',
+  'reflect',
+  'reflect_facts',
+  'reflect_preferences',
+  'reflect_contradictions',
+  'reflect_resolve_contradiction',
+  'tx_begin',
+  'tx_remember',
+  'tx_commit',
+  'tx_rollback'
+] as const;
+
 function makeMockDb() {
   return {
     rememberTyped: vi.fn().mockResolvedValue('m-1'),
@@ -24,7 +54,7 @@ function makeMockDb() {
 describe('vercel ai adapter', () => {
   it('returns remember/search/recall tools', () => {
     const tools = clawdbTools(makeMockDb());
-    expect(Object.keys(tools)).toEqual(['remember', 'search', 'recall']);
+    expect(Object.keys(tools)).toEqual(EXPECTED_TOOL_NAMES);
   });
 
   it('middleware injects memory context into params', async () => {

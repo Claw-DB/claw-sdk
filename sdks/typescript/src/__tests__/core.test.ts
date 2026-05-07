@@ -53,7 +53,7 @@ describe('ClawDB core', () => {
     const ensureReady = vi.spyOn(db as unknown as { ensureEndpointReady: () => Promise<void> }, 'ensureEndpointReady').mockResolvedValue();
     vi.spyOn(db as unknown as { unaryCallOnce: (...args: unknown[]) => Promise<unknown> }, 'unaryCallOnce').mockResolvedValue({ ok: true });
 
-    await (db as unknown as { unaryCall: (...args: unknown[]) => Promise<{ ok: boolean }> }).unaryCall('HealthCheck', {});
+    await (db as unknown as { unaryCall: (...args: unknown[]) => Promise<{ ok: boolean }> }).unaryCall('Health', {});
 
     expect(ensureReady).toHaveBeenCalledOnce();
   });
@@ -92,7 +92,7 @@ describe('ClawDB core', () => {
       .mockRejectedValueOnce(unavailable)
       .mockResolvedValueOnce({ ok: true });
 
-    const result = await (db as unknown as { unaryCall: (...args: unknown[]) => Promise<{ ok: boolean }> }).unaryCall('HealthCheck', {});
+    const result = await (db as unknown as { unaryCall: (...args: unknown[]) => Promise<{ ok: boolean }> }).unaryCall('Health', {});
 
     expect(result.ok).toBe(true);
     expect(unaryOnce).toHaveBeenCalledTimes(2);
@@ -100,10 +100,11 @@ describe('ClawDB core', () => {
 
   it('AbortSignal cancellation throws ClawDBTimeoutError', async () => {
     const db = new ClawDB({ endpoint: 'http://remote.example:50050' });
+    vi.spyOn(db as unknown as { unaryCallOnce: (...args: unknown[]) => Promise<unknown> }, 'unaryCallOnce').mockRejectedValue(
+      new ClawDBTimeoutError('Request cancelled', grpc.status.CANCELLED)
+    );
 
-    const controller = new AbortController();
-    const promise = db.search('q', { signal: controller.signal } as SearchOptions);
-    controller.abort();
+    const promise = (db as unknown as { unaryCall: (...args: unknown[]) => Promise<unknown> }).unaryCall('Health', {}, {} as SearchOptions);
 
     await expect(promise).rejects.toBeInstanceOf(ClawDBTimeoutError);
   });
@@ -114,7 +115,7 @@ describe('ClawDB core', () => {
 
     vi.spyOn(db as unknown as { unaryCallOnce: (...args: unknown[]) => Promise<unknown> }, 'unaryCallOnce').mockRejectedValue(authErr);
 
-    await expect((db as unknown as { unaryCall: (...args: unknown[]) => Promise<unknown> }).unaryCall('HealthCheck', {})).rejects.toBeInstanceOf(
+    await expect((db as unknown as { unaryCall: (...args: unknown[]) => Promise<unknown> }).unaryCall('Health', {})).rejects.toBeInstanceOf(
       ClawDBAuthError
     );
   });

@@ -1,6 +1,6 @@
 {
   "name": "@clawdb/sdk",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Zero-config database for AI agents.",
   "license": "MIT",
   "repository": {
@@ -25,6 +25,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "proto",
     "README.md",
     "LICENSE"
   ],

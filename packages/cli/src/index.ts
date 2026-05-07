@@ -149,7 +149,12 @@ function startLocalBinary(port = 50050, detach = false): void {
 
   const child = spawn(binary, ['--grpc-port', String(port)], {
     detached: detach,
-    stdio: detach ? 'ignore' : 'inherit'
+    stdio: detach ? 'ignore' : 'inherit',
+    env: {
+      ...process.env,
+      CLAW_GUARD_JWT_SECRET: process.env.CLAW_GUARD_JWT_SECRET ?? 'clawdb-sdk-local-dev-secret',
+      CLAW_VECTOR_ENABLED: process.env.CLAW_VECTOR_ENABLED ?? 'false'
+    }
   });
 
   if (detach) {

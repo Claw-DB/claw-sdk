@@ -12,16 +12,16 @@
 //!     let db = ClawDBClient::auto_provision().await?;
 //!
 //!     // Store a memory
-//!     let id = db.memory().remember("The user prefers concise answers").await?;
+//!     let id = db.remember("The user prefers concise answers").await?;
 //!     println!("Stored: {id}");
 //!
 //!     // Search semantically
-//!     let results = db.memory().search("user preferences").top_k(5).call().await?;
+//!     let results = db.search("user preferences", Default::default()).await?;
 //!     for r in results {
 //!         println!("  [{:.2}] {}", r.score, r.content);
 //!     }
 //!
-//!     db.close().await;
+//!     db.close();
 //!     Ok(())
 //! }
 //! ```
