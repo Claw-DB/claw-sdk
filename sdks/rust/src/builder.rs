@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 
 use crate::client::ClawDB;
 use crate::error::{SdkError, SdkResult};

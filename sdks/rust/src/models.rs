@@ -29,9 +29,13 @@ pub struct MemoryRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub memory: MemoryRecord,
+pub struct SearchHit {
+    pub id: Uuid,
+    pub content: String,
     pub score: f64,
+    pub memory_type: MemoryType,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

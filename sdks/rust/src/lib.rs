@@ -1,24 +1,24 @@
-//! # ClawDB Rust SDK
+//! # ClawDB Rust Client
 //!
 //! Official Rust SDK for [ClawDB](https://clawdb.io) — the cognitive database for AI agents.
 //!
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use clawdb_sdk::{ClawDB, SearchOptions};
+//! use clawdb_client::ClawDBClient;
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let db = ClawDB::from_env().await?;
+//! async fn main() -> clawdb_client::Result<()> {
+//!     let db = ClawDBClient::auto_provision().await?;
 //!
 //!     // Store a memory
-//!     let id = db.remember("The user prefers concise answers").await?;
+//!     let id = db.memory().remember("The user prefers concise answers").await?;
 //!     println!("Stored: {id}");
 //!
 //!     // Search semantically
-//!     let results = db.search("user preferences", SearchOptions::default()).await?;
+//!     let results = db.memory().search("user preferences").top_k(5).call().await?;
 //!     for r in results {
-//!         println!("  [{:.2}] {}", r.score, r.memory.content);
+//!         println!("  [{:.2}] {}", r.score, r.content);
 //!     }
 //!
 //!     db.close().await;
@@ -32,16 +32,18 @@ pub mod error;
 pub mod models;
 
 pub use builder::ClawDBBuilder;
-pub use client::ClawDB;
+pub use client::{ClawDB, ClawDBClient};
 pub use error::{SdkError, SdkResult};
 pub use models::{
-    BranchInfo, DiffResult, MemoryRecord, MemoryType, MergeResult, RememberOptions, SearchOptions,
-    SearchResult, SyncResult,
+    BranchInfo, DiffResult, MemoryRecord, MemoryType, MergeResult, RememberOptions, SearchOptions, SearchHit,
+    SyncResult,
 };
+
+pub type Result<T> = SdkResult<T>;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Prelude — import this for the most commonly used types.
 pub mod prelude {
-    pub use crate::{ClawDB, SdkError, SdkResult, SearchOptions};
+    pub use crate::{ClawDBClient, Result, SdkError, SdkResult, SearchOptions};
 }

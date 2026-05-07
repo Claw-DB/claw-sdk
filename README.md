@@ -1,6 +1,8 @@
 # ClawDB SDK
 
-The official multi-language SDK, CLI, and framework adapters for **ClawDB** — persistent, branchable, semantically-searchable agent memory.
+The official multi-language SDK, CLI, and framework adapters for **ClawDB**.
+
+ClawDB itself is implemented in Rust. For TypeScript, Python, and Go, the packages in this repository are gRPC clients that talk to a running `clawdb-server` process locally or to a hosted cloud endpoint. The Rust runtime is the engine layer underneath that server.
 
 [![CI](https://github.com/clawdb/sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/clawdb/sdk/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@clawdb/sdk)](https://www.npmjs.com/package/@clawdb/sdk)
@@ -14,7 +16,7 @@ The official multi-language SDK, CLI, and framework adapters for **ClawDB** — 
 | Package | Language | Description |
 |---|---|---|
 | [`@clawdb/sdk`](sdks/typescript/) | TypeScript | Core gRPC client |
-| [`@clawdb/cli`](sdks/cli-wrapper/) | TypeScript | `clawdb` CLI |
+| [`@clawdb/cli`](packages/cli/) | TypeScript | `clawdb` CLI |
 | [`@clawdb/langchain`](adapters/langchain/) | TypeScript | LangChain.js adapter |
 | [`@clawdb/openai-agents`](adapters/openai/) | TypeScript | OpenAI Agents SDK adapter |
 | [`@clawdb/vercel-ai`](adapters/vercel-ai/) | TypeScript | Vercel AI SDK adapter |
@@ -23,9 +25,32 @@ The official multi-language SDK, CLI, and framework adapters for **ClawDB** — 
 | [`clawdb`](sdks/rust/) | Rust | Tokio async Rust client |
 | [`github.com/Claw-DB/claw-sdk/sdks/go`](sdks/go/) | Go | Go client |
 
+## Architecture
+
+There are two layers in the ClawDB product:
+
+- The Rust runtime and `clawdb-server` binary are the database engine.
+- The TypeScript, Python, and Go SDKs in this repository are clients that connect to that engine over gRPC.
+
+That means the non-Rust SDKs assume one of the following is true:
+
+- `clawdb-server` is already running locally on `http://localhost:50050`
+- you have run `npx @clawdb/cli@latest init` successfully to provision a local server
+- you are pointing the SDK at a managed cloud endpoint
+
+The Rust surface is different from the other SDK tabs conceptually: Rust is the implementation layer the server is built on, while the non-Rust packages are network clients.
+
 ---
 
 ## 30-second quickstart
+
+TypeScript, Python, and Go examples below assume `clawdb-server` is already running locally or that you are using a cloud endpoint. If you want the local path, start with:
+
+```bash
+npx @clawdb/cli@latest init
+```
+
+If auto-provision is unavailable in your environment, start `clawdb-server` manually and then use the SDKs against `http://localhost:50050`.
 
 ### TypeScript
 
@@ -53,6 +78,8 @@ print(results[0].memory.content)  # "Deploy at 3 PM UTC"
 ```
 
 ### Rust
+
+The Rust quickstart below shows the Rust package in this repository. Product-wise, Rust is the engine layer ClawDB is built on; the other SDKs connect to that engine through `clawdb-server`.
 
 ```rust
 use clawdb::Client;
@@ -157,6 +184,12 @@ clawdb memory search "deploy schedule"
 clawdb branch fork my-experiment
 clawdb sync
 clawdb status
+```
+
+For ephemeral usage, prefer:
+
+```bash
+npx @clawdb/cli@latest init
 ```
 
 ---

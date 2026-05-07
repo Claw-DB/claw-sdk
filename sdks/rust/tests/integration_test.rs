@@ -1,4 +1,4 @@
-use clawdb_sdk::{ClawDBBuilder, SdkError};
+use clawdb_client::{ClawDBBuilder, SdkError};
 
 #[tokio::test]
 async fn test_builder_defaults() {
