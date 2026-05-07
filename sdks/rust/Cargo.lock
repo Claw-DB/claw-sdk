@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "clawdb-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "backoff",
