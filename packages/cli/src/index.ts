@@ -318,6 +318,9 @@ async function initCommand(options: { cloud?: boolean; dataDir?: string }, jsonF
       process.stdout.write("Your agent now has a database. That's it.\n\n");
       await maybeInstallMcpHost();
     }
+    // Suppress background gRPC keepalive errors after init completes
+    db.on('error', () => {});
+    await (db as any).disconnect().catch(() => {});
   } catch (error) {
     spinner.stop();
     throw error;
