@@ -1,0 +1,26 @@
+import clawdb, { ClawDB, type MemoryOptions, type SearchOptions, type SearchHit } from '../src/index';
+
+async function run(): Promise<void> {
+  const db = await clawdb();
+  const fromEnv = ClawDB.fromEnv();
+
+  const rememberOptions: MemoryOptions = {
+    memoryType: 'message',
+    tags: ['sdk'],
+    metadata: { ok: true }
+  };
+
+  const searchOptions: SearchOptions = {
+    topK: 5,
+    semantic: true,
+    filter: { kind: 'note' }
+  };
+
+  const id: string = await db.memory.remember('hello', rememberOptions);
+  const hits: SearchHit[] = await db.memory.search('hello', searchOptions);
+  const _recall: SearchHit[] = await fromEnv.memory.recall([id]);
+
+  void hits;
+}
+
+void run();

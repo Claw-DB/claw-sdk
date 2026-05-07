@@ -1,22 +1,20 @@
-export { ClawDB } from './client';
-export { MemoryClient } from './memory.client';
-export { BranchClient } from './branch.client';
-export { SyncClient } from './sync.client';
-export { ReflectClient } from './reflect.client';
-export { SessionClient } from './session.client';
-export { ClawDBEventStream } from './streaming';
-export { BatchClient, BatchBuilder } from './batch';
+export {
+  ClawDB,
+  type ClawDBConfig,
+  type MemoryOptions,
+  type SearchOptions,
+  type SearchHit,
+  type BranchInfo,
+  type MergeResult,
+  type SyncStatus,
+  type ReflectJob,
+  type HealthStatus,
+  ClawDBError,
+  ClawDBAuthError,
+  ClawDBNotFoundError,
+  ClawDBRateLimitError,
+  ClawDBUnavailableError,
+  ClawDBTimeoutError
+} from './core';
 
-export * from './types';
-export type {
-  BranchInfo,
-  BranchStatus,
-  ClawDBConfig,
-  ClawDBSession,
-  MemoryRecord,
-  MemoryType,
-  ReflectJob,
-  SearchResult,
-  SyncResult
-} from '@clawdb/types';
-export * from '@clawdb/errors';
+export { default } from './core';

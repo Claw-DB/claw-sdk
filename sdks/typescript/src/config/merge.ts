@@ -17,9 +17,12 @@ export function mergeConfigs(...configs: Partial<ClawDBFileConfig>[]): ClawDBFil
       if (value === undefined) continue;
 
       if (key === 'sync' && typeof value === 'object' && value !== null) {
+        const currentSync = merged.sync;
+        const nextSync = value as ClawDBFileConfig['sync'];
         merged.sync = {
-          ...(merged.sync ?? {}),
-          ...(value as ClawDBFileConfig['sync']),
+          interval_secs: currentSync?.interval_secs ?? nextSync?.interval_secs ?? 30,
+          ...(currentSync ?? {}),
+          ...(nextSync ?? {}),
         };
       } else if (key === 'reflect' && typeof value === 'object' && value !== null) {
         merged.reflect = {

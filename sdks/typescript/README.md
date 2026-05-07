@@ -1,6 +1,8 @@
 # @clawdb/sdk (TypeScript)
 
-The official TypeScript/Node.js client for **ClawDB** — persistent, branchable, semantically-searchable agent memory.
+The official TypeScript/Node.js client for **ClawDB**.
+
+This package is a gRPC client. It talks to a running `clawdb-server` process on your machine or to a hosted cloud endpoint. It does not embed the Rust engine directly into your Node.js process.
 
 ```bash
 npm install @clawdb/sdk
@@ -9,6 +11,14 @@ pnpm add @clawdb/sdk
 ```
 
 ## Quick start
+
+Start a local server first:
+
+```bash
+npx @clawdb/cli@latest init
+```
+
+If you already manage your own server, point the SDK at that endpoint instead.
 
 ```ts
 import { ClawDB } from '@clawdb/sdk';
@@ -84,6 +94,12 @@ Or via environment variables:
 | `CLAWDB_AGENT_ID` | Agent ID |
 | `CLAWDB_WORKSPACE` | Workspace name |
 | `CLAWDB_TIMEOUT_MS` | Request timeout (ms) |
+
+## Runtime model
+
+- TypeScript connects to `clawdb-server` over gRPC.
+- `clawdb-server` hosts the Rust runtime in-process.
+- For cloud usage, set `CLAWDB_ENDPOINT` and `CLAWDB_API_KEY` to your managed deployment instead of localhost.
 
 ## Auth utilities
 

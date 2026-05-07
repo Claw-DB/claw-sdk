@@ -176,6 +176,7 @@ export type {
   ClawDBConfig,
   ClawDBSession,
   MemoryRecord,
+  MemoryType,
   ReflectJob,
   SearchResult,
   SyncResult

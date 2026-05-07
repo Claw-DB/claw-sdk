@@ -1,21 +1,42 @@
 {
   "name": "@clawdb/sdk",
-  "version": "0.1.0",
-  "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "version": "0.1.5",
+  "description": "Zero-config database for AI agents.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Claw-DB/claw-sdk",
+    "directory": "sdks/typescript"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "database",
+    "memory",
+    "clawdb",
+    "langchain",
+    "openai",
+    "vercel-ai",
+    "mcp"
+  ],
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "README.md", "LICENSE"],
   "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@grpc/grpc-js": ">=1.10.0"
   },
   "publishConfig": {
     "access": "public"
@@ -27,9 +48,11 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@clawdb/errors": "workspace:*",
-    "@clawdb/proto": "workspace:*",
-    "@clawdb/types": "workspace:*",
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.0",
+    "@clawdb/errors": "^0.1.0",
+    "@clawdb/proto": "^0.1.0",
+    "@clawdb/types": "^0.1.0",
     "nice-grpc": "^2.1.0",
     "nice-grpc-web": "^3.0.0",
     "zod": "^3.23.8"

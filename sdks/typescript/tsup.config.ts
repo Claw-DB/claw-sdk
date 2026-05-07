@@ -8,5 +8,8 @@ export default defineConfig({
   clean: true,
   treeshake: true,
   target: 'es2020',
-  platform: 'neutral'
+  platform: 'node',
+  outExtension({ format }) {
+    return format === 'esm' ? { js: '.mjs' } : { js: '.js' };
+  }
 });

@@ -60,7 +60,7 @@ export function readFromEnv(): Partial<ClawDBFileConfig> {
   const syncHubUrl = env('CLAWDB_SYNC_HUB_URL');
   const syncIntervalRaw = env('CLAWDB_SYNC_INTERVAL_SECS');
   if (syncHubUrl || syncIntervalRaw) {
-    result.sync = {};
+    result.sync = { interval_secs: 30 };
     if (syncHubUrl) result.sync.hub_url = syncHubUrl;
     if (syncIntervalRaw) {
       const n = parseFloat(syncIntervalRaw);
