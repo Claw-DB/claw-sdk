@@ -240,20 +240,32 @@ function mergeJsonFile(filePath: string, patch: Record<string, unknown>): void {
   writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
 }
 
-async function maybeInstallClaude(): Promise<void> {
+function installMcpForHost(host: EditorHost, jsonFlag = false): void {
+  const path = editorConfigPath(host);
+  mergeJsonFile(path, mcpConfigBlock(host));
+  writeOutput(jsonFlag ? { ok: true, host, configPath: path } : `✓ ClawDB installed for ${host}. Restart to activate.`, jsonFlag);
+}
+
+async function maybeInstallMcpHost(): Promise<void> {
   const response = await prompts({
-    type: 'confirm',
-    name: 'value',
-    initial: true,
-    message: 'Install ClawDB for Claude Desktop?'
+    type: 'select',
+    name: 'host',
+    message: 'Install ClawDB MCP config for which host?',
+    initial: 0,
+    choices: [
+      { title: 'Claude Desktop', value: 'claude' },
+      { title: 'Cursor', value: 'cursor' },
+      { title: 'VS Code', value: 'vscode' },
+      { title: 'Continue', value: 'continue' },
+      { title: 'Zed', value: 'zed' },
+      { title: 'Skip for now', value: 'skip' }
+    ]
   });
-  if (response.value === false) return;
-  const result = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['-y', '@clawdb/mcp-adapter', '--install-claude'], {
-    stdio: 'inherit'
-  });
-  if (result.status !== 0) {
-    throw new Error('Failed to install Claude Desktop MCP config');
+  const host = response.host as EditorHost | 'skip' | undefined;
+  if (!host || host === 'skip') {
+    return;
   }
+  installMcpForHost(host, false);
 }
 
 // ─── init command ────────────────────────────────────────────────────────
@@ -302,9 +314,9 @@ async function initCommand(options: { cloud?: boolean; dataDir?: string }, jsonF
       process.stdout.write(`${chalk.green('✓')} Database initialised at ${options.dataDir ?? join(homedir(), '.clawdb')}/\n\n`);
       process.stdout.write('Add to your agent:\n\n');
       process.stdout.write(`  ${formatSnippet(projectType)}\n`);
-      process.stdout.write('  MCP:         npx @clawdb/mcp-adapter --install-claude\n\n');
+      process.stdout.write('  MCP:         clawdb mcp install-<claude|cursor|vscode|continue|zed>\n\n');
       process.stdout.write("Your agent now has a database. That's it.\n\n");
-      await maybeInstallClaude();
+      await maybeInstallMcpHost();
     }
   } catch (error) {
     spinner.stop();
@@ -328,9 +340,7 @@ function registerMcpCommands(program: Command): void {
   const editors: EditorHost[] = ['claude', 'cursor', 'vscode', 'continue', 'zed'];
   for (const host of editors) {
     mcp.command(`install-${host}`).option('--json', 'JSON output').action((options: { json?: boolean }) => {
-      const path = editorConfigPath(host);
-      mergeJsonFile(path, mcpConfigBlock(host));
-      writeOutput(options.json ? { ok: true, host, configPath: path } : `✓ ClawDB installed for ${host}. Restart to activate.`, options.json);
+      installMcpForHost(host, options.json);
     });
   }
   mcp.command('print-config').option('--host <host>', 'Target editor host', 'claude').action((options: { host: EditorHost }) => {
