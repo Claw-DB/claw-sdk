@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, chmodSy
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 
@@ -164,7 +165,8 @@ const SERVICE = 'clawdb.v1.ClawDBService';
 const DEFAULT_SERVER_RELEASE_VERSION = '0.1.9';
 const DEFAULT_LOCAL_JWT_SECRET = 'clawdb-sdk-local-dev-secret';
 const DEFAULT_SESSION_SCOPES = ['*'];
-const PROTO_PATH = resolve(__dirname, '../proto/clawdb.proto');
+const MODULE_DIR = typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(import.meta.url));
+const PROTO_PATH = resolve(MODULE_DIR, '../proto/clawdb.proto');
 
 const channelPool = new Map<string, RawClient>();
 let serviceClientConstructor: LoadedServiceClientConstructor | undefined;
