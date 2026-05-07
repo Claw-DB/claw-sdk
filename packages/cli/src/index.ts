@@ -196,18 +196,20 @@ async function smokeTest(db: ClawDB): Promise<void> {
 
 // ─── MCP config helpers ───────────────────────────────────────────────────
 
+// Returns the legacy flat block used by `mcp print-config`
 export function mcpConfigBlock(host: EditorHost): Record<string, JsonRecord> {
-  const block = {
-    clawdb: {
-      command: 'npx',
-      args: ['-y', '@clawdb/mcp-adapter@latest'],
-      env: {
-        CLAWDB_ENDPOINT: 'http://localhost:50050',
-        CLAWDB_AGENT_ID: `${host}`
-      }
-    }
+  return {
+    mcpServers: {
+      clawdb: {
+        command: 'npx',
+        args: ['-y', '@clawdb/mcp-adapter@latest'],
+        env: {
+          CLAWDB_ENDPOINT: 'http://localhost:50050',
+          CLAWDB_AGENT_ID: host,
+        },
+      },
+    },
   };
-  return { mcpServers: block };
 }
 
 function editorConfigPath(host: EditorHost): string {
@@ -227,25 +229,51 @@ function editorConfigPath(host: EditorHost): string {
   }
 }
 
-function mergeJsonFile(filePath: string, patch: Record<string, unknown>): void {
+// Each host uses a different top-level key in its config file
+function hostConfigKey(host: EditorHost): string {
+  if (host === 'vscode') return 'servers';
+  if (host === 'zed') return 'context_servers';
+  return 'mcpServers';
+}
+
+// Build the server entry object shaped for each host's expected schema
+function hostServerEntry(host: EditorHost): Record<string, unknown> {
+  const env = { CLAWDB_ENDPOINT: 'http://localhost:50050', CLAWDB_AGENT_ID: host };
+  if (host === 'vscode') {
+    // VS Code MCP (servers key) requires type: stdio
+    return { type: 'stdio', command: 'npx', args: ['-y', '@clawdb/mcp-adapter@latest'], env };
+  }
+  if (host === 'zed') {
+    // Zed uses context_servers with a nested command object
+    return {
+      command: { path: 'npx', args: ['-y', '@clawdb/mcp-adapter@latest'] },
+      settings: { env },
+    };
+  }
+  // Claude Desktop, Cursor, OpenClaw, Google Antigravity share the mcpServers format
+  return { command: 'npx', args: ['-y', '@clawdb/mcp-adapter@latest'], env };
+}
+
+function mergeJsonFile(filePath: string, host: EditorHost): void {
   mkdirSync(dirname(filePath), { recursive: true });
   const current = existsSync(filePath)
     ? JSON.parse(readFileSync(filePath, 'utf8')) as Record<string, unknown>
     : {};
+  const key = hostConfigKey(host);
   const next = {
     ...current,
-    mcpServers: {
-      ...((current.mcpServers as Record<string, unknown> | undefined) ?? {}),
-      ...((patch.mcpServers as Record<string, unknown>) ?? {})
-    }
+    [key]: {
+      ...((current[key] as Record<string, unknown> | undefined) ?? {}),
+      clawdb: hostServerEntry(host),
+    },
   };
   writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
 }
 
 function installMcpForHost(host: EditorHost, jsonFlag = false): void {
   const path = editorConfigPath(host);
-  mergeJsonFile(path, mcpConfigBlock(host));
-  writeOutput(jsonFlag ? { ok: true, host, configPath: path } : `✓ ClawDB installed for ${host}. Restart to activate.`, jsonFlag);
+  mergeJsonFile(path, host);
+  writeOutput(jsonFlag ? { ok: true, host, configPath: path } : `${chalk.green('✓')} ClawDB MCP config written to ${path}`, jsonFlag);
 }
 
 function printPostInitTips(host: EditorHost | 'skip'): void {
@@ -339,20 +367,26 @@ async function initCommand(options: { cloud?: boolean; dataDir?: string }, jsonF
     writeClawdbEnv(envValues);
     spinner.stop();
 
-    if (isJsonMode(jsonFlag)) {
-      writeOutput({ projectType, backend, endpoint: db.endpoint, envFile: envFilePath(), snippet: formatSnippet(projectType) }, true);
-    } else {
-      process.stdout.write(`${chalk.green('✓')} Server started on ${db.endpoint}\n`);
-      process.stdout.write(`${chalk.green('✓')} Database initialised at ${options.dataDir ?? join(homedir(), '.clawdb')}/\n\n`);
-      process.stdout.write('Add to your agent:\n\n');
-      process.stdout.write(`  ${formatSnippet(projectType)}\n`);
-      process.stdout.write('  MCP:         clawdb mcp install-<claude|cursor|vscode|zed|openclaw|google-antigravity>\n\n');
-      process.stdout.write("Your agent now has a database. That's it.\n\n");
-      await maybeInstallMcpHost();
-    }
-    // Suppress background gRPC keepalive errors and stop the connectivity watcher
+    // Detach the gRPC connectivity watcher now that we're done with the db.
+    // This MUST happen synchronously before any `await` that yields to the
+    // event loop — otherwise the pending watchConnectivityState deadline
+    // callback fires before the error handler is registered, crashing the process.
     db.on('error', () => {});
     db.close();
+
+    if (isJsonMode(jsonFlag)) {
+      writeOutput({ projectType, backend, endpoint: db.endpoint, envFile: envFilePath(), snippet: formatSnippet(projectType) }, true);
+      process.exit(0);
+    }
+
+    process.stdout.write(`${chalk.green('✓')} Server started on ${db.endpoint}\n`);
+    process.stdout.write(`${chalk.green('✓')} Database initialised at ${options.dataDir ?? join(homedir(), '.clawdb')}/\n\n`);
+    process.stdout.write('Add to your agent:\n\n');
+    process.stdout.write(`  ${formatSnippet(projectType)}\n`);
+    process.stdout.write('  MCP:         clawdb mcp install-<claude|cursor|vscode|zed|openclaw|google-antigravity>\n\n');
+    process.stdout.write("Your agent now has a database. That's it.\n\n");
+    await maybeInstallMcpHost();
+    process.exit(0);
   } catch (error) {
     spinner.stop();
     throw error;
