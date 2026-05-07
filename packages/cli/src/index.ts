@@ -14,7 +14,7 @@ import clawdb, { ClawDB } from '@clawdb/sdk';
 
 export type ProjectType = 'node' | 'python' | 'go' | 'rust' | 'unknown';
 export type BackendType = 'sqlite' | 'postgres' | 'cloud';
-export type EditorHost = 'claude' | 'cursor' | 'vscode' | 'continue' | 'zed';
+export type EditorHost = 'claude' | 'cursor' | 'vscode' | 'zed' | 'openclaw' | 'google-antigravity';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -218,10 +218,12 @@ function editorConfigPath(host: EditorHost): string {
       return join(homedir(), '.cursor', 'mcp.json');
     case 'vscode':
       return resolve(process.cwd(), '.vscode', 'mcp.json');
-    case 'continue':
-      return join(homedir(), '.continue', 'config.json');
     case 'zed':
       return join(homedir(), '.config', 'zed', 'settings.json');
+    case 'openclaw':
+      return join(homedir(), '.openclaw', 'mcp.json');
+    case 'google-antigravity':
+      return join(homedir(), '.config', 'google-antigravity', 'mcp.json');
   }
 }
 
@@ -246,6 +248,33 @@ function installMcpForHost(host: EditorHost, jsonFlag = false): void {
   writeOutput(jsonFlag ? { ok: true, host, configPath: path } : `✓ ClawDB installed for ${host}. Restart to activate.`, jsonFlag);
 }
 
+function printPostInitTips(host: EditorHost | 'skip'): void {
+  process.stdout.write('\n');
+  if (host === 'skip') {
+    process.stdout.write(`${chalk.bold('Next steps:')}
+`);
+    process.stdout.write(`  Install MCP later:  ${chalk.cyan('clawdb mcp install-<host>')}
+`);
+    process.stdout.write(`  Hosts available:    claude · cursor · vscode · zed · openclaw · google-antigravity\n`);
+  } else {
+    const hostLabel: Record<EditorHost, string> = {
+      claude: 'Claude Desktop',
+      cursor: 'Cursor',
+      vscode: 'VS Code',
+      zed: 'Zed',
+      openclaw: 'OpenClaw',
+      'google-antigravity': 'Google Antigravity',
+    };
+    process.stdout.write(`${chalk.bold('Next steps:')}
+`);
+    process.stdout.write(`  1. ${chalk.yellow(`Restart ${hostLabel[host]}`)} to activate the MCP server\n`);
+    process.stdout.write(`  2. Look for ${chalk.cyan('ClawDB')} in your host's tool/MCP panel\n`);
+    process.stdout.write(`  3. Your agent can now call memory, branch, and sync tools automatically\n`);
+  }
+  process.stdout.write(`\n  Docs: ${chalk.underline('https://docs.clawdb.dev')}\n`);
+  process.stdout.write(`  Status: ${chalk.cyan('clawdb status')}  ·  Help: ${chalk.cyan('clawdb --help')}\n\n`);
+}
+
 async function maybeInstallMcpHost(): Promise<void> {
   const response = await prompts({
     type: 'select',
@@ -256,16 +285,19 @@ async function maybeInstallMcpHost(): Promise<void> {
       { title: 'Claude Desktop', value: 'claude' },
       { title: 'Cursor', value: 'cursor' },
       { title: 'VS Code', value: 'vscode' },
-      { title: 'Continue', value: 'continue' },
       { title: 'Zed', value: 'zed' },
+      { title: 'OpenClaw', value: 'openclaw' },
+      { title: 'Google Antigravity', value: 'google-antigravity' },
       { title: 'Skip for now', value: 'skip' }
     ]
   });
   const host = response.host as EditorHost | 'skip' | undefined;
   if (!host || host === 'skip') {
+    printPostInitTips('skip');
     return;
   }
   installMcpForHost(host, false);
+  printPostInitTips(host);
 }
 
 // ─── init command ────────────────────────────────────────────────────────
@@ -314,13 +346,13 @@ async function initCommand(options: { cloud?: boolean; dataDir?: string }, jsonF
       process.stdout.write(`${chalk.green('✓')} Database initialised at ${options.dataDir ?? join(homedir(), '.clawdb')}/\n\n`);
       process.stdout.write('Add to your agent:\n\n');
       process.stdout.write(`  ${formatSnippet(projectType)}\n`);
-      process.stdout.write('  MCP:         clawdb mcp install-<claude|cursor|vscode|continue|zed>\n\n');
+      process.stdout.write('  MCP:         clawdb mcp install-<claude|cursor|vscode|zed|openclaw|google-antigravity>\n\n');
       process.stdout.write("Your agent now has a database. That's it.\n\n");
       await maybeInstallMcpHost();
     }
-    // Suppress background gRPC keepalive errors after init completes
+    // Suppress background gRPC keepalive errors and stop the connectivity watcher
     db.on('error', () => {});
-    await (db as any).disconnect().catch(() => {});
+    db.close();
   } catch (error) {
     spinner.stop();
     throw error;
@@ -340,7 +372,7 @@ async function cloudLogin(jsonFlag = false): Promise<void> {
 
 function registerMcpCommands(program: Command): void {
   const mcp = program.command('mcp').description('MCP adapter management');
-  const editors: EditorHost[] = ['claude', 'cursor', 'vscode', 'continue', 'zed'];
+  const editors: EditorHost[] = ['claude', 'cursor', 'vscode', 'zed', 'openclaw', 'google-antigravity'];
   for (const host of editors) {
     mcp.command(`install-${host}`).option('--json', 'JSON output').action((options: { json?: boolean }) => {
       installMcpForHost(host, options.json);
