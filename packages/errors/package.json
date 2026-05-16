@@ -1,6 +1,6 @@
 {
   "name": "@clawdb/errors",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,8 +19,8 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@clawdb/proto": "workspace:*",
-    "@clawdb/types": "workspace:*"
+    "@clawdb/proto": "0.1.3",
+    "@clawdb/types": "0.1.3"
   },
   "devDependencies": {
     "vitest": "^1.6.1"
