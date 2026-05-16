@@ -18,6 +18,8 @@ export type EditorHost = 'claude' | 'cursor' | 'vscode' | 'zed' | 'openclaw' | '
 
 type JsonRecord = Record<string, unknown>;
 
+const activeClients = new Set<ClawDB>();
+
 // ─── Output helpers ───────────────────────────────────────────────────────────
 
 function isJsonMode(jsonFlag = false): boolean {
@@ -177,10 +179,22 @@ function cliVersion(): string {
 }
 
 async function getDb(override?: { endpoint?: string }): Promise<ClawDB> {
+  let db: ClawDB;
   if (override?.endpoint) {
-    return new ClawDB({ endpoint: override.endpoint, agentId: process.env.CLAWDB_AGENT_ID });
+    db = new ClawDB({ endpoint: override.endpoint, agentId: process.env.CLAWDB_AGENT_ID });
+  } else {
+    db = await clawdb();
   }
-  return clawdb();
+  db.on('error', () => {});
+  activeClients.add(db);
+  return db;
+}
+
+function closeActiveClients(): void {
+  for (const db of activeClients) {
+    db.close();
+    activeClients.delete(db);
+  }
 }
 
 // ─── Smoke test ───────────────────────────────────────────────────────────
@@ -766,6 +780,12 @@ async function main(): Promise<void> {
   const program = new Command();
   const version = cliVersion();
   program.name('clawdb').description('ClawDB command line interface').version(version);
+
+  // Ensure each command tears down the SDK channel watcher to avoid
+  // late unhandled gRPC timeout events and hanging CLI processes.
+  program.hook('postAction', async () => {
+    closeActiveClients();
+  });
 
   program.command('init')
     .description('Initialise ClawDB for this project')

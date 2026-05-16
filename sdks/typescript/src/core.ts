@@ -566,16 +566,21 @@ function startDetachedServer(binaryPath: string): Promise<number> {
 
 async function waitForHealth(endpoint: string, timeoutMs: number): Promise<boolean> {
   const db = new ClawDB({ endpoint, timeoutMs: 500, maxRetries: 1, __skipLocalBootstrap: true });
+  db.on('error', () => {});
   const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      await db.ping();
-      return true;
-    } catch {
-      await sleep(100);
+  try {
+    while (Date.now() - start < timeoutMs) {
+      try {
+        await db.ping();
+        return true;
+      } catch {
+        await sleep(100);
+      }
     }
+    return false;
+  } finally {
+    db.close();
   }
-  return false;
 }
 
 async function ensureLocalServerAvailable(): Promise<string> {
